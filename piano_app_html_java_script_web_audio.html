@@ -280,8 +280,17 @@
           <span>Key</span>
           <select id="keyLock"></select>
         </label>
+        <label class="accomp-field" for="accompSound">
+          <span>Sound</span>
+          <select id="accompSound">
+            <option value="pad" selected>Soft pad</option>
+            <option value="bass">Bass guitar</option>
+            <option value="tanpura">Tanpura</option>
+            <option value="sitar">Sitar</option>
+          </select>
+        </label>
         <label class="accomp-field" for="accompLevel">
-          <span>Accomp</span>
+          <span>Level</span>
           <input id="accompLevel" type="range" min="0" max="1" step="0.01" value="0.55" />
         </label>
       </div>
@@ -329,6 +338,7 @@
     const audioDotEl = document.getElementById('audioDot');
     const autoChordsEl = document.getElementById('autoChords');
     const keyLockEl = document.getElementById('keyLock');
+    const accompSoundEl = document.getElementById('accompSound');
     const accompLevelEl = document.getElementById('accompLevel');
     const chordNameEl = document.getElementById('chordName');
     const chordMetaEl = document.getElementById('chordMeta');
@@ -344,6 +354,8 @@
     let audioCtx = null;
     let masterGain = null;
     let harmoniumWave = null;
+    let tanpuraWave = null;
+    let sitarWave = null;
     let bellowsLfo = null;
     let bellowsDepth = null;
     const currentVoice = new Map(); // midi -> sounding voice for that key
@@ -382,6 +394,42 @@
       bellowsDepth.gain.value = 0.05;
       bellowsLfo.connect(bellowsDepth);
       bellowsLfo.start();
+    }
+
+    function getTanpuraWave() {
+      if (tanpuraWave) return tanpuraWave;
+      // Jawari-like buzz: dense, slightly inharmonic-leaning partial stack.
+      const n = 32;
+      const real = new Float32Array(n);
+      const imag = new Float32Array(n);
+      for (let i = 1; i < n; i++) {
+        imag[i] = (1 / Math.pow(i, 0.7)) * (i % 2 ? 1 : 0.55) * Math.exp(-0.03 * i);
+      }
+      imag[1] = 1;
+      imag[2] = 0.7;
+      imag[3] = 0.85;
+      imag[4] = 0.4;
+      imag[5] = 0.55;
+      tanpuraWave = audioCtx.createPeriodicWave(real, imag, { disableNormalization: false });
+      return tanpuraWave;
+    }
+
+    function getSitarWave() {
+      if (sitarWave) return sitarWave;
+      // Bright metallic string-ish spectrum.
+      const n = 28;
+      const real = new Float32Array(n);
+      const imag = new Float32Array(n);
+      for (let i = 1; i < n; i++) {
+        imag[i] = (1 / i) * Math.exp(-0.045 * i) * (i % 2 ? 1.15 : 0.7);
+      }
+      imag[1] = 0.9;
+      imag[2] = 0.75;
+      imag[3] = 0.95;
+      imag[6] = 0.45;
+      imag[8] = 0.35;
+      sitarWave = audioCtx.createPeriodicWave(real, imag, { disableNormalization: false });
+      return sitarWave;
     }
 
     const syncAudioDot = () => {
@@ -870,25 +918,150 @@
       chordPad.style = null;
     }
 
-    function createPadVoice(midi, now, level, reedStyle) {
+    function accompStyle() {
+      return accompSoundEl.value || 'pad';
+    }
+
+    function padLevelFor(index, count, style, accomp) {
+      const isBass = index === count - 1;
+      if (style === 'bass') return (isBass ? 0.16 : 0.07) * accomp;
+      if (style === 'tanpura') return (isBass ? 0.09 : 0.11) * accomp;
+      if (style === 'sitar') return (isBass ? 0.05 : 0.09) * accomp;
+      // soft pad / reed blend
+      const reed = wave.value === 'harmonium';
+      return (isBass ? 0.05 : 0.078) * accomp * (reed ? 0.85 : 1);
+    }
+
+    function createPadVoice(midi, now, level, style, voiceIndex = 0) {
       const gain = audioCtx.createGain();
       const filter = audioCtx.createBiquadFilter();
       const oscillators = [];
       const nodes = [filter, gain];
+      const freq = midiToFreq(midi);
 
-      if (reedStyle) {
+      if (style === 'bass') {
+        const osc = audioCtx.createOscillator();
+        const oscSub = audioCtx.createOscillator();
+        osc.type = 'sawtooth';
+        oscSub.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now);
+        oscSub.frequency.setValueAtTime(freq * 0.5, now);
+        const mix = audioCtx.createGain();
+        mix.gain.value = 0.55;
+        const subMix = audioCtx.createGain();
+        subMix.gain.value = 0.4;
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(520, now);
+        filter.frequency.exponentialRampToValueAtTime(220, now + 0.18);
+        filter.Q.setValueAtTime(1.2, now);
+        osc.connect(mix);
+        oscSub.connect(subMix);
+        mix.connect(filter);
+        subMix.connect(filter);
+        filter.connect(gain);
+        // Plucky bass envelope.
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, level), now + 0.012);
+        gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, level * 0.45), now + 0.22);
+        osc.start(now);
+        oscSub.start(now);
+        oscillators.push(osc, oscSub);
+        nodes.push(osc, oscSub, mix, subMix);
+      } else if (style === 'tanpura') {
+        const waveTable = getTanpuraWave();
+        const osc1 = audioCtx.createOscillator();
+        const osc2 = audioCtx.createOscillator();
+        osc1.setPeriodicWave(waveTable);
+        osc2.setPeriodicWave(waveTable);
+        osc1.frequency.setValueAtTime(freq, now);
+        osc2.frequency.setValueAtTime(freq * 1.0025, now);
+        const mix = audioCtx.createGain();
+        mix.gain.value = 0.65;
+        filter.type = 'bandpass';
+        filter.frequency.setValueAtTime(Math.min(2400, freq * 3.5), now);
+        filter.Q.setValueAtTime(1.4, now);
+        const shimmer = audioCtx.createGain();
+        shimmer.gain.value = 1;
+        const lfo = audioCtx.createOscillator();
+        const lfoGain = audioCtx.createGain();
+        lfo.type = 'sine';
+        lfo.frequency.value = 0.35 + voiceIndex * 0.07; // slow cyclic jawari feel
+        lfoGain.gain.value = 0.07;
+        osc1.connect(mix);
+        osc2.connect(mix);
+        mix.connect(filter);
+        filter.connect(shimmer);
+        shimmer.connect(gain);
+        lfo.connect(lfoGain);
+        lfoGain.connect(shimmer.gain);
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, level), now + 0.25);
+        osc1.start(now);
+        osc2.start(now);
+        lfo.start(now);
+        oscillators.push(osc1, osc2, lfo);
+        nodes.push(osc1, osc2, mix, shimmer, lfo, lfoGain);
+      } else if (style === 'sitar') {
+        const waveTable = getSitarWave();
+        const osc = audioCtx.createOscillator();
+        const osc2 = audioCtx.createOscillator();
+        osc.setPeriodicWave(waveTable);
+        osc2.type = 'triangle';
+        const stagger = voiceIndex * 0.03;
+        const t0 = now + stagger;
+        osc.frequency.setValueAtTime(freq * 1.01, t0);
+        osc.frequency.exponentialRampToValueAtTime(freq, t0 + 0.05);
+        osc2.frequency.setValueAtTime(freq * 2, t0);
+        const mix = audioCtx.createGain();
+        const mix2 = audioCtx.createGain();
+        mix.gain.value = 0.7;
+        mix2.gain.value = 0.12;
+        filter.type = 'bandpass';
+        filter.frequency.setValueAtTime(1800, t0);
+        filter.frequency.exponentialRampToValueAtTime(900, t0 + 0.35);
+        filter.Q.setValueAtTime(2.2, t0);
+        // Soft pluck noise.
+        const noiseDur = 0.04;
+        const noiseBuf = audioCtx.createBuffer(1, Math.floor(audioCtx.sampleRate * noiseDur), audioCtx.sampleRate);
+        const data = noiseBuf.getChannelData(0);
+        for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+        const noise = audioCtx.createBufferSource();
+        const noiseGain = audioCtx.createGain();
+        const noiseFilter = audioCtx.createBiquadFilter();
+        noise.buffer = noiseBuf;
+        noiseFilter.type = 'highpass';
+        noiseFilter.frequency.value = 1200;
+        noiseGain.gain.setValueAtTime(level * 0.35, t0);
+        noiseGain.gain.exponentialRampToValueAtTime(0.0001, t0 + noiseDur);
+        osc.connect(mix);
+        osc2.connect(mix2);
+        mix.connect(filter);
+        mix2.connect(filter);
+        filter.connect(gain);
+        noise.connect(noiseFilter);
+        noiseFilter.connect(noiseGain);
+        noiseGain.connect(gain);
+        gain.gain.setValueAtTime(0.0001, t0);
+        gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, level), t0 + 0.01);
+        gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, level * 0.35), t0 + 0.5);
+        osc.start(t0);
+        osc2.start(t0);
+        noise.start(t0);
+        oscillators.push(osc, osc2, noise);
+        nodes.push(osc, osc2, mix, mix2, noise, noiseGain, noiseFilter);
+      } else if (style === 'pad' && wave.value === 'harmonium') {
         ensureBellows();
         const waveTable = getHarmoniumWave();
         const osc1 = audioCtx.createOscillator();
         const osc2 = audioCtx.createOscillator();
         osc1.setPeriodicWave(waveTable);
         osc2.setPeriodicWave(waveTable);
-        osc1.frequency.setValueAtTime(midiToFreq(midi), now);
-        osc2.frequency.setValueAtTime(midiToFreq(midi) * 1.004, now);
+        osc1.frequency.setValueAtTime(freq, now);
+        osc2.frequency.setValueAtTime(freq * 1.004, now);
         const mix = audioCtx.createGain();
         mix.gain.value = 0.7;
         filter.type = 'bandpass';
-        filter.frequency.setValueAtTime(Math.min(2200, midiToFreq(midi) * 2.8), now);
+        filter.frequency.setValueAtTime(Math.min(2200, freq * 2.8), now);
         filter.Q.setValueAtTime(0.9, now);
         const trem = audioCtx.createGain();
         trem.gain.value = 1;
@@ -898,6 +1071,8 @@
         filter.connect(trem);
         trem.connect(gain);
         bellowsDepth.connect(trem.gain);
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, level), now + 0.06);
         osc1.start(now);
         osc2.start(now);
         oscillators.push(osc1, osc2);
@@ -905,44 +1080,69 @@
       } else {
         const osc = audioCtx.createOscillator();
         osc.type = 'triangle';
-        osc.frequency.setValueAtTime(midiToFreq(midi), now);
+        osc.frequency.setValueAtTime(freq, now);
         filter.type = 'lowpass';
         filter.frequency.setValueAtTime(1600, now);
         filter.Q.setValueAtTime(0.3, now);
         osc.connect(filter);
         filter.connect(gain);
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, level), now + 0.06);
         osc.start(now);
         oscillators.push(osc);
         nodes.push(osc);
       }
 
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, level), now + 0.06);
       gain.connect(masterGain);
       return { oscillators, nodes, gain };
     }
 
+    function tanpuraMidis(key) {
+      // Classic Sa–Pa–Sa drone from the detected/locked key (not every chord).
+      let sa = 45 + ((key.tonic - (45 % 12) + 12) % 12); // around F2–E3
+      while (sa < 43) sa += 12;
+      while (sa > 52) sa -= 12;
+      const pa = sa + 7;
+      const saHi = sa + 12;
+      return [sa, pa, saHi, sa - 12];
+    }
+
+    function bassMidis(chord) {
+      let root = 36 + chord.rootPc; // C2 + pc
+      while (root < 36) root += 12;
+      while (root > 48) root -= 12;
+      return [root + 7, root]; // fifth + root (root last = "bass" slot for leveling)
+    }
+
     function startChordPad(chord, force = false) {
       getCtx();
-      const reedStyle = wave.value === 'harmonium';
-      if (!force && chordPad.label === chord.label && chordPad.style === reedStyle) return;
+      const style = accompStyle();
+      const styleKey = `${style}:${wave.value === 'harmonium' ? 'h' : 'x'}`;
+      // Tanpura follows key; other styles follow chord label.
+      const identity = style === 'tanpura'
+        ? `tanpura:${detectedKey.tonic}:${detectedKey.mode}`
+        : chord.label;
+
+      if (!force && chordPad.label === identity && chordPad.style === styleKey) return;
       const prevMidis = chordPad.midis.slice();
-      stopChordPad(0.2);
+      stopChordPad(style === 'tanpura' ? 0.45 : 0.2);
 
       const now = audioCtx.currentTime;
-      const midis = voiceLeadMidis(chord, prevMidis);
+      let midis;
+      if (style === 'tanpura') midis = tanpuraMidis(detectedKey);
+      else if (style === 'bass') midis = bassMidis(chord);
+      else midis = voiceLeadMidis(chord, prevMidis);
+
       const accomp = parseFloat(accompLevelEl.value);
       const voices = midis.map((midi, i) => {
-        const isBass = i === midis.length - 1;
-        const base = isBass ? 0.05 : 0.078;
-        const level = base * accomp * (reedStyle ? 0.85 : 1);
-        return createPadVoice(midi, now, level, reedStyle);
+        const level = padLevelFor(i, midis.length, style, accomp);
+        return createPadVoice(midi, now, level, style, i);
       });
 
       chordPad.voices = voices;
-      chordPad.label = chord.label;
+      chordPad.label = identity;
       chordPad.midis = midis;
-      chordPad.style = reedStyle;
+      chordPad.style = styleKey;
     }
 
     function onMelodyNote(midi, durMs = 180) {
@@ -973,19 +1173,21 @@
       if (!currentChord || next.label !== currentChord.label) {
         currentChord = next;
         lastChordChangeAt = now;
-        startChordPad(currentChord);
-      } else if (!chordPad.label) {
-        startChordPad(currentChord);
       }
+      const tanpuraId = `tanpura:${detectedKey.tonic}:${detectedKey.mode}`;
+      const padStale = !chordPad.label
+        || (accompStyle() === 'tanpura' ? chordPad.label !== tanpuraId : chordPad.label !== currentChord.label);
+      if (padStale) startChordPad(currentChord);
 
       updateChordReadout(detectedKey, currentChord);
 
       clearTimeout(accompIdleTimer);
+      const idleMs = accompStyle() === 'tanpura' ? 5200 : 3000;
       accompIdleTimer = setTimeout(() => {
-        stopChordPad(0.65);
+        stopChordPad(accompStyle() === 'tanpura' ? 1.0 : 0.65);
         chordPad.midis = [];
         updateChordReadout(detectedKey, null);
-      }, 3000);
+      }, idleMs);
     }
 
     function queueMelodyHarmony(midi) {
@@ -1037,21 +1239,21 @@
     accompLevelEl.addEventListener('input', () => {
       if (!audioCtx || !chordPad.voices.length) return;
       const accomp = parseFloat(accompLevelEl.value);
+      const style = accompStyle();
       const now = audioCtx.currentTime;
       chordPad.voices.forEach((v, i) => {
-        const isBass = i === chordPad.voices.length - 1;
-        const base = isBass ? 0.05 : 0.078;
-        const level = base * accomp * (chordPad.style === true ? 0.85 : 1);
+        const level = padLevelFor(i, chordPad.voices.length, style, accomp);
         v.gain.gain.cancelScheduledValues(now);
         v.gain.gain.setTargetAtTime(Math.max(0.0001, level), now, 0.03);
       });
     });
 
-    wave.addEventListener('change', () => {
-      if (currentChord && autoChordsEl.checked && chordPad.label) {
-        startChordPad(currentChord, true);
-      }
-    });
+    function refreshAccompPad() {
+      if (currentChord && autoChordsEl.checked) startChordPad(currentChord, true);
+    }
+
+    wave.addEventListener('change', refreshAccompPad);
+    accompSoundEl.addEventListener('change', refreshAccompPad);
 
     // ---- Keyboard UI ----
     let startC = 60;
