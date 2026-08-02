@@ -183,12 +183,13 @@
 
     <section class="controls">
       <div class="control">
-        <label for="wave">Waveform</label>
+        <label for="wave">Instrument</label>
         <select id="wave">
           <option value="sine">Sine</option>
           <option value="triangle" selected>Triangle</option>
           <option value="sawtooth">Sawtooth</option>
           <option value="square">Square</option>
+          <option value="harmonium">Harmonium</option>
         </select>
       </div>
       <div class="control">
@@ -265,16 +266,37 @@
     // Fast playing fix: releasing voices are NOT kept in currentVoice, and note-on
     // always retriggers (chokes prior voice) instead of silently returning.
     const MAX_VOICES = 32;
-    const ENV = { attack: 0.004, decay: 0.09, sustain: 0.52, release: 0.18, choke: 0.008 };
-    const VOICE_GAIN = 0.32;
+    const BASIC_ENV = { attack: 0.004, decay: 0.09, sustain: 0.52, release: 0.18, choke: 0.008, gain: 0.32 };
+    // Reed/organ-like: slower speak, high sustain, gentle release (bellows feel).
+    const HARMONIUM_ENV = { attack: 0.04, decay: 0.1, sustain: 0.92, release: 0.3, choke: 0.015, gain: 0.2 };
 
     let audioCtx = null;
     let masterGain = null;
+    let harmoniumWave = null;
     const currentVoice = new Map(); // midi -> sounding voice for that key
     const liveVoices = new Set();
     const codePressed = new Set();
     const pointerNotes = new Map(); // pointerId -> midi
     let voiceSeq = 0;
+
+    function getHarmoniumWave() {
+      if (harmoniumWave) return harmoniumWave;
+      // Free-reed spectrum: strong fundamental + odd-heavy partials (nasal/reedy).
+      const n = 20;
+      const real = new Float32Array(n);
+      const imag = new Float32Array(n);
+      for (let i = 1; i < n; i++) {
+        const oddBoost = (i % 2 === 1) ? 1 : 0.45;
+        imag[i] = (oddBoost / i) * Math.exp(-0.08 * i);
+      }
+      imag[1] = 1;
+      imag[3] = 0.72;
+      imag[5] = 0.48;
+      imag[7] = 0.28;
+      imag[9] = 0.16;
+      harmoniumWave = audioCtx.createPeriodicWave(real, imag, { disableNormalization: false });
+      return harmoniumWave;
+    }
 
     const syncAudioDot = () => {
       audioDotEl.classList.toggle('off', !(audioCtx && audioCtx.state === 'running'));
@@ -308,8 +330,9 @@
     };
 
     function stopNodes(v, t) {
-      try { v.osc1.stop(t); } catch (_) {}
-      try { v.osc2.stop(t); } catch (_) {}
+      for (const osc of v.oscillators) {
+        try { osc.stop(t); } catch (_) {}
+      }
     }
 
     function disposeVoice(v) {
@@ -317,10 +340,9 @@
       v.dead = true;
       liveVoices.delete(v);
       if (currentVoice.get(v.midi) === v) currentVoice.delete(v.midi);
-      try { v.osc1.disconnect(); } catch (_) {}
-      try { v.osc2.disconnect(); } catch (_) {}
-      try { v.filter.disconnect(); } catch (_) {}
-      try { v.gain.disconnect(); } catch (_) {}
+      for (const node of v.nodes) {
+        try { node.disconnect(); } catch (_) {}
+      }
     }
 
     function fadeOut(v, t, seconds, levelHint) {
@@ -341,7 +363,7 @@
     function chokeVoice(v, t) {
       // Live retriggers use the instantaneous gain; future (scheduled) chokes use sustain level.
       const level = (t <= audioCtx.currentTime + 0.002) ? undefined : v.sustainLevel;
-      fadeOut(v, t, ENV.choke, level);
+      fadeOut(v, t, v.choke, level);
     }
 
     function releaseVoice(v, when) {
@@ -349,7 +371,7 @@
       const level = (when == null || when <= audioCtx.currentTime + 0.002)
         ? undefined
         : v.sustainLevel;
-      fadeOut(v, t, ENV.release, level);
+      fadeOut(v, t, v.release, level);
     }
 
     function stealOldest(t) {
@@ -362,21 +384,11 @@
       if (victim) chokeVoice(victim, t);
     }
 
-    function voiceOn(midi, velocity = 1, when = null) {
-      getCtx();
-      const t = at(when);
-
-      const prev = currentVoice.get(midi);
-      if (prev && !prev.dead) chokeVoice(prev, t);
-
-      stealOldest(t);
-
-      const freq = midiToFreq(midi);
+    function buildBasicVoice(freq, type, t) {
       const osc1 = audioCtx.createOscillator();
       const osc2 = audioCtx.createOscillator();
       const filter = audioCtx.createBiquadFilter();
       const gain = audioCtx.createGain();
-      const type = wave.value;
 
       osc1.type = type;
       osc2.type = type;
@@ -393,24 +405,117 @@
       filter.connect(gain);
       gain.connect(masterGain);
 
-      const peak = Math.max(0.0001, velocity) * VOICE_GAIN;
-      const sustainLevel = peak * ENV.sustain;
-      gain.gain.setValueAtTime(0.0001, t);
-      gain.gain.exponentialRampToValueAtTime(peak, t + ENV.attack);
-      gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, sustainLevel), t + ENV.attack + ENV.decay);
+      osc1.start(t);
+      osc2.start(t);
+
+      return {
+        oscillators: [osc1, osc2],
+        nodes: [osc1, osc2, filter, gain],
+        gain,
+      };
+    }
+
+    function buildHarmoniumVoice(freq, t) {
+      const waveTable = getHarmoniumWave();
+      const osc1 = audioCtx.createOscillator();
+      const osc2 = audioCtx.createOscillator();
+      const osc3 = audioCtx.createOscillator(); // soft octave-up reed shimmer
+      const band = audioCtx.createBiquadFilter();
+      const low = audioCtx.createBiquadFilter();
+      const tremolo = audioCtx.createGain();
+      const lfo = audioCtx.createOscillator();
+      const lfoDepth = audioCtx.createGain();
+      const gain = audioCtx.createGain();
+
+      osc1.setPeriodicWave(waveTable);
+      osc2.setPeriodicWave(waveTable);
+      osc3.type = 'sine';
+      osc1.frequency.setValueAtTime(freq, t);
+      osc2.frequency.setValueAtTime(freq * 1.006, t); // dual-reed detune
+      osc3.frequency.setValueAtTime(freq * 2, t);
+
+      const mix1 = audioCtx.createGain();
+      const mix2 = audioCtx.createGain();
+      const mix3 = audioCtx.createGain();
+      mix1.gain.setValueAtTime(0.72, t);
+      mix2.gain.setValueAtTime(0.55, t);
+      mix3.gain.setValueAtTime(0.12, t);
+
+      // Nasal reed body: band-pass focus + soft low-pass air.
+      band.type = 'bandpass';
+      band.frequency.setValueAtTime(Math.min(2800, freq * 3.2), t);
+      band.Q.setValueAtTime(1.1, t);
+      low.type = 'lowpass';
+      low.frequency.setValueAtTime(4200, t);
+      low.Q.setValueAtTime(0.5, t);
+
+      // Gentle bellows tremolo.
+      tremolo.gain.setValueAtTime(1, t);
+      lfo.type = 'sine';
+      lfo.frequency.setValueAtTime(5.2, t);
+      lfoDepth.gain.setValueAtTime(0.045, t);
+
+      osc1.connect(mix1);
+      osc2.connect(mix2);
+      osc3.connect(mix3);
+      mix1.connect(band);
+      mix2.connect(band);
+      mix3.connect(low);
+      band.connect(low);
+      low.connect(tremolo);
+      tremolo.connect(gain);
+      gain.connect(masterGain);
+      lfo.connect(lfoDepth);
+      lfoDepth.connect(tremolo.gain);
 
       osc1.start(t);
       osc2.start(t);
+      osc3.start(t);
+      lfo.start(t);
+
+      return {
+        oscillators: [osc1, osc2, osc3, lfo],
+        nodes: [osc1, osc2, osc3, mix1, mix2, mix3, band, low, tremolo, lfo, lfoDepth, gain],
+        gain,
+      };
+    }
+
+    function voiceOn(midi, velocity = 1, when = null) {
+      getCtx();
+      const t = at(when);
+
+      const prev = currentVoice.get(midi);
+      if (prev && !prev.dead) chokeVoice(prev, t);
+
+      stealOldest(t);
+
+      const freq = midiToFreq(midi);
+      const instrument = wave.value;
+      const isHarmonium = instrument === 'harmonium';
+      const env = isHarmonium ? HARMONIUM_ENV : BASIC_ENV;
+      const built = isHarmonium
+        ? buildHarmoniumVoice(freq, t)
+        : buildBasicVoice(freq, instrument, t);
+
+      const peak = Math.max(0.0001, velocity) * env.gain;
+      const sustainLevel = peak * env.sustain;
+      built.gain.gain.setValueAtTime(0.0001, t);
+      built.gain.gain.exponentialRampToValueAtTime(peak, t + env.attack);
+      built.gain.gain.exponentialRampToValueAtTime(
+        Math.max(0.0001, sustainLevel),
+        t + env.attack + env.decay
+      );
 
       const v = {
         id: ++voiceSeq,
         midi,
-        osc1,
-        osc2,
-        filter,
-        gain,
+        oscillators: built.oscillators,
+        nodes: built.nodes,
+        gain: built.gain,
         startedAt: t,
         sustainLevel,
+        release: env.release,
+        choke: env.choke,
         releasing: false,
         pedaled: false,
         dead: false,
