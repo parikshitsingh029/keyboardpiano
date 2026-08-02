@@ -230,11 +230,20 @@
       <div class="control">
         <label for="wave">Instrument</label>
         <select id="wave">
-          <option value="sine">Sine</option>
-          <option value="triangle" selected>Triangle</option>
-          <option value="sawtooth">Sawtooth</option>
-          <option value="square">Square</option>
-          <option value="harmonium">Harmonium</option>
+          <optgroup label="Instruments">
+            <option value="piano" selected>Grand Piano</option>
+            <option value="harmonium">Harmonium</option>
+            <option value="flute">Flute</option>
+            <option value="violin">Violin</option>
+            <option value="viola">Viola</option>
+            <option value="cello">Cello</option>
+          </optgroup>
+          <optgroup label="Basic waves">
+            <option value="sine">Sine</option>
+            <option value="triangle">Triangle</option>
+            <option value="sawtooth">Sawtooth</option>
+            <option value="square">Square</option>
+          </optgroup>
         </select>
       </div>
       <div class="control">
@@ -348,39 +357,70 @@
     // always retriggers (chokes prior voice) instead of silently returning.
     const MAX_VOICES = 32;
     const BASIC_ENV = { attack: 0.004, decay: 0.09, sustain: 0.52, release: 0.18, choke: 0.008, gain: 0.32 };
-    // Reed/organ-like: slower speak, high sustain, gentle release (bellows feel).
-    const HARMONIUM_ENV = { attack: 0.04, decay: 0.1, sustain: 0.92, release: 0.3, choke: 0.015, gain: 0.2 };
+    const INSTRUMENT_ENV = {
+      piano:     { attack: 0.002, decay: 1.1, sustain: 0.12, release: 0.5, choke: 0.02, gain: 0.42 },
+      harmonium: { attack: 0.04, decay: 0.1, sustain: 0.92, release: 0.3, choke: 0.015, gain: 0.2 },
+      flute:     { attack: 0.05, decay: 0.1, sustain: 0.82, release: 0.22, choke: 0.02, gain: 0.26 },
+      violin:    { attack: 0.08, decay: 0.14, sustain: 0.86, release: 0.28, choke: 0.02, gain: 0.2 },
+      viola:     { attack: 0.09, decay: 0.16, sustain: 0.86, release: 0.3, choke: 0.022, gain: 0.22 },
+      cello:     { attack: 0.1, decay: 0.18, sustain: 0.88, release: 0.34, choke: 0.025, gain: 0.24 },
+    };
+    const BASIC_WAVES = new Set(['sine', 'triangle', 'sawtooth', 'square']);
 
     let audioCtx = null;
     let masterGain = null;
     let harmoniumWave = null;
+    let stringWave = null;
+    let pianoWave = null;
     let tanpuraWave = null;
     let sitarWave = null;
     let bellowsLfo = null;
     let bellowsDepth = null;
+    let noiseBuffer = null;
     const currentVoice = new Map(); // midi -> sounding voice for that key
     const liveVoices = new Set();
     const codePressed = new Set();
     const pointerNotes = new Map(); // pointerId -> midi
     let voiceSeq = 0;
 
+    function makeWave(partialFn, n = 24) {
+      const real = new Float32Array(n);
+      const imag = new Float32Array(n);
+      for (let i = 1; i < n; i++) imag[i] = partialFn(i);
+      return audioCtx.createPeriodicWave(real, imag, { disableNormalization: false });
+    }
+
     function getHarmoniumWave() {
       if (harmoniumWave) return harmoniumWave;
       // Free-reed spectrum: strong fundamental + odd-heavy partials (nasal/reedy).
-      const n = 20;
-      const real = new Float32Array(n);
-      const imag = new Float32Array(n);
-      for (let i = 1; i < n; i++) {
+      harmoniumWave = makeWave((i) => {
         const oddBoost = (i % 2 === 1) ? 1 : 0.45;
-        imag[i] = (oddBoost / i) * Math.exp(-0.08 * i);
-      }
-      imag[1] = 1;
-      imag[3] = 0.72;
-      imag[5] = 0.48;
-      imag[7] = 0.28;
-      imag[9] = 0.16;
-      harmoniumWave = audioCtx.createPeriodicWave(real, imag, { disableNormalization: false });
+        return (oddBoost / i) * Math.exp(-0.08 * i);
+      }, 20);
       return harmoniumWave;
+    }
+
+    function getStringWave() {
+      if (stringWave) return stringWave;
+      // Bowed-string-ish: bright odd/even mix with slower roll-off.
+      stringWave = makeWave((i) => (1 / Math.pow(i, 0.9)) * Math.exp(-0.04 * i) * (i % 2 ? 1.05 : 0.8), 26);
+      return stringWave;
+    }
+
+    function getPianoWave() {
+      if (pianoWave) return pianoWave;
+      // Hammered-string partials with fairly quick brightness falloff.
+      pianoWave = makeWave((i) => (1 / Math.pow(i, 1.15)) * Math.exp(-0.06 * i), 28);
+      return pianoWave;
+    }
+
+    function getNoiseBuffer() {
+      if (noiseBuffer) return noiseBuffer;
+      const len = audioCtx.sampleRate * 1.5;
+      noiseBuffer = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+      const data = noiseBuffer.getChannelData(0);
+      for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+      return noiseBuffer;
     }
 
     function ensureBellows() {
@@ -608,6 +648,207 @@
       };
     }
 
+    function buildFluteVoice(freq, t) {
+      const osc = audioCtx.createOscillator();
+      const osc2 = audioCtx.createOscillator();
+      const filter = audioCtx.createBiquadFilter();
+      const breathFilter = audioCtx.createBiquadFilter();
+      const breathGain = audioCtx.createGain();
+      const vibrato = audioCtx.createOscillator();
+      const vibratoGain = audioCtx.createGain();
+      const gain = audioCtx.createGain();
+      const noise = audioCtx.createBufferSource();
+
+      osc.type = 'sine';
+      osc2.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, t);
+      osc2.frequency.setValueAtTime(freq, t);
+      const mix2 = audioCtx.createGain();
+      mix2.gain.value = 0.12;
+
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(Math.min(2800, freq * 4.5), t);
+      filter.Q.setValueAtTime(0.4, t);
+
+      // Soft breath noise.
+      noise.buffer = getNoiseBuffer();
+      noise.loop = true;
+      breathFilter.type = 'bandpass';
+      breathFilter.frequency.setValueAtTime(Math.min(2200, freq * 3), t);
+      breathFilter.Q.setValueAtTime(0.7, t);
+      breathGain.gain.setValueAtTime(0.03, t);
+
+      vibrato.type = 'sine';
+      vibrato.frequency.setValueAtTime(5.2, t);
+      vibratoGain.gain.setValueAtTime(freq * 0.004, t);
+      vibrato.connect(vibratoGain);
+      vibratoGain.connect(osc.frequency);
+
+      osc.connect(filter);
+      osc2.connect(mix2);
+      mix2.connect(filter);
+      noise.connect(breathFilter);
+      breathFilter.connect(breathGain);
+      breathGain.connect(gain);
+      filter.connect(gain);
+      gain.connect(masterGain);
+
+      osc.start(t);
+      osc2.start(t);
+      noise.start(t);
+      vibrato.start(t);
+
+      return {
+        oscillators: [osc, osc2, noise, vibrato],
+        nodes: [osc, osc2, mix2, filter, noise, breathFilter, breathGain, vibrato, vibratoGain, gain],
+        gain,
+      };
+    }
+
+    function buildStringVoice(freq, t, kind) {
+      // violin: bright/high, viola: warmer mid, cello: dark/low body
+      const cfg = {
+        violin: { body: 1800, bright: 4200, vibHz: 5.6, vibDepth: 0.0045, detune: 1.004, odd: 0.18 },
+        viola:  { body: 1200, bright: 2800, vibHz: 5.2, vibDepth: 0.004, detune: 1.0035, odd: 0.14 },
+        cello:  { body: 700, bright: 1800, vibHz: 4.8, vibDepth: 0.0035, detune: 1.003, odd: 0.1 },
+      }[kind];
+
+      const waveTable = getStringWave();
+      const osc1 = audioCtx.createOscillator();
+      const osc2 = audioCtx.createOscillator();
+      const osc3 = audioCtx.createOscillator();
+      const band = audioCtx.createBiquadFilter();
+      const low = audioCtx.createBiquadFilter();
+      const vibrato = audioCtx.createOscillator();
+      const vibratoGain = audioCtx.createGain();
+      const gain = audioCtx.createGain();
+      const mix1 = audioCtx.createGain();
+      const mix2 = audioCtx.createGain();
+      const mix3 = audioCtx.createGain();
+
+      osc1.setPeriodicWave(waveTable);
+      osc2.setPeriodicWave(waveTable);
+      osc3.type = 'sine';
+      osc1.frequency.setValueAtTime(freq, t);
+      osc2.frequency.setValueAtTime(freq * cfg.detune, t);
+      osc3.frequency.setValueAtTime(freq * 2, t);
+      mix1.gain.value = 0.7;
+      mix2.gain.value = 0.55;
+      mix3.gain.value = cfg.odd;
+
+      band.type = 'bandpass';
+      band.frequency.setValueAtTime(cfg.body, t);
+      band.Q.setValueAtTime(1.0, t);
+      low.type = 'lowpass';
+      low.frequency.setValueAtTime(cfg.bright, t);
+      low.frequency.exponentialRampToValueAtTime(cfg.bright * 0.7, t + 0.25);
+      low.Q.setValueAtTime(0.5, t);
+
+      vibrato.type = 'sine';
+      vibrato.frequency.setValueAtTime(cfg.vibHz, t);
+      vibratoGain.gain.setValueAtTime(0.0001, t);
+      // Bow vibrato eases in after the note speaks.
+      vibratoGain.gain.linearRampToValueAtTime(freq * cfg.vibDepth, t + 0.22);
+      vibrato.connect(vibratoGain);
+      vibratoGain.connect(osc1.frequency);
+      vibratoGain.connect(osc2.frequency);
+
+      osc1.connect(mix1);
+      osc2.connect(mix2);
+      osc3.connect(mix3);
+      mix1.connect(band);
+      mix2.connect(band);
+      mix3.connect(low);
+      band.connect(low);
+      low.connect(gain);
+      gain.connect(masterGain);
+
+      osc1.start(t);
+      osc2.start(t);
+      osc3.start(t);
+      vibrato.start(t);
+
+      return {
+        oscillators: [osc1, osc2, osc3, vibrato],
+        nodes: [osc1, osc2, osc3, mix1, mix2, mix3, band, low, vibrato, vibratoGain, gain],
+        gain,
+      };
+    }
+
+    function buildPianoVoice(freq, t) {
+      const waveTable = getPianoWave();
+      const osc1 = audioCtx.createOscillator();
+      const osc2 = audioCtx.createOscillator();
+      const osc3 = audioCtx.createOscillator();
+      const filter = audioCtx.createBiquadFilter();
+      const hammerFilter = audioCtx.createBiquadFilter();
+      const hammerGain = audioCtx.createGain();
+      const gain = audioCtx.createGain();
+      const mix1 = audioCtx.createGain();
+      const mix2 = audioCtx.createGain();
+      const mix3 = audioCtx.createGain();
+      const hammer = audioCtx.createBufferSource();
+
+      osc1.setPeriodicWave(waveTable);
+      osc2.setPeriodicWave(waveTable);
+      osc3.type = 'sine';
+      osc1.frequency.setValueAtTime(freq, t);
+      osc2.frequency.setValueAtTime(freq * 1.002, t);
+      osc3.frequency.setValueAtTime(freq * 2, t);
+      mix1.gain.value = 0.7;
+      mix2.gain.value = 0.45;
+      mix3.gain.value = 0.16;
+
+      filter.type = 'lowpass';
+      // Bright strike then quickly mellows (felt hammer / string decay).
+      const bright = Math.min(9000, 1800 + freq * 6);
+      filter.frequency.setValueAtTime(bright, t);
+      filter.frequency.exponentialRampToValueAtTime(Math.max(600, bright * 0.25), t + 0.9);
+      filter.Q.setValueAtTime(0.7, t);
+
+      hammer.buffer = getNoiseBuffer();
+      hammerFilter.type = 'bandpass';
+      hammerFilter.frequency.setValueAtTime(Math.min(4000, freq * 5), t);
+      hammerFilter.Q.setValueAtTime(1.5, t);
+      hammerGain.gain.setValueAtTime(0.12, t);
+      hammerGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
+
+      osc1.connect(mix1);
+      osc2.connect(mix2);
+      osc3.connect(mix3);
+      mix1.connect(filter);
+      mix2.connect(filter);
+      mix3.connect(filter);
+      hammer.connect(hammerFilter);
+      hammerFilter.connect(hammerGain);
+      hammerGain.connect(gain);
+      filter.connect(gain);
+      gain.connect(masterGain);
+
+      osc1.start(t);
+      osc2.start(t);
+      osc3.start(t);
+      hammer.start(t);
+      hammer.stop(t + 0.05);
+
+      return {
+        oscillators: [osc1, osc2, osc3, hammer],
+        nodes: [osc1, osc2, osc3, mix1, mix2, mix3, filter, hammer, hammerFilter, hammerGain, gain],
+        gain,
+      };
+    }
+
+    function buildInstrumentVoice(instrument, freq, t) {
+      if (BASIC_WAVES.has(instrument)) return buildBasicVoice(freq, instrument, t);
+      if (instrument === 'harmonium') return buildHarmoniumVoice(freq, t);
+      if (instrument === 'flute') return buildFluteVoice(freq, t);
+      if (instrument === 'violin' || instrument === 'viola' || instrument === 'cello') {
+        return buildStringVoice(freq, t, instrument);
+      }
+      if (instrument === 'piano') return buildPianoVoice(freq, t);
+      return buildBasicVoice(freq, 'triangle', t);
+    }
+
     function voiceOn(midi, velocity = 1, when = null) {
       getCtx();
       const t = at(when);
@@ -619,16 +860,14 @@
 
       const freq = midiToFreq(midi);
       const instrument = wave.value;
-      const isHarmonium = instrument === 'harmonium';
-      const env = isHarmonium ? HARMONIUM_ENV : BASIC_ENV;
-      const built = isHarmonium
-        ? buildHarmoniumVoice(freq, t)
-        : buildBasicVoice(freq, instrument, t);
+      const env = INSTRUMENT_ENV[instrument] || BASIC_ENV;
+      const built = buildInstrumentVoice(instrument, freq, t);
 
       const peak = Math.max(0.0001, velocity) * env.gain;
       const sustainLevel = peak * env.sustain;
+      built.gain.gain.cancelScheduledValues(t);
       built.gain.gain.setValueAtTime(0.0001, t);
-      built.gain.gain.exponentialRampToValueAtTime(peak, t + env.attack);
+      built.gain.gain.exponentialRampToValueAtTime(peak, t + Math.max(0.001, env.attack));
       built.gain.gain.exponentialRampToValueAtTime(
         Math.max(0.0001, sustainLevel),
         t + env.attack + env.decay
