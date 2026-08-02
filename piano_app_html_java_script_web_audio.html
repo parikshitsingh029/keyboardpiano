@@ -4587,7 +4587,7 @@
     }, true);
 
     // Extra guard: ignore letter/digit typeahead on our dropdowns for piano keys.
-    for (const el of [wave, octaveSel, keyLockEl, accompSoundEl, taalSelectEl, percSelectEl, mixProfileEl]) {
+    for (const el of [wave, octaveSel, keyLockEl, accompSoundEl, taalSelectEl, percSelectEl, mixProfileEl, eyeModeEl]) {
       el.addEventListener('keydown', (e) => {
         if (KEY_CODES.includes(e.code)) {
           e.preventDefault();
@@ -4595,6 +4595,21 @@
         }
       });
     }
+
+    function applyEyeMode(mode) {
+      const next = mode === 'focus' ? 'focus' : 'comfort';
+      document.body.dataset.eyes = next;
+      try { localStorage.setItem('p2a3s2v-eyes', next); } catch (_) {}
+      scheduleStaffUpdate();
+    }
+    try {
+      const savedEyes = localStorage.getItem('p2a3s2v-eyes');
+      if (savedEyes === 'comfort' || savedEyes === 'focus') {
+        eyeModeEl.value = savedEyes;
+        applyEyeMode(savedEyes);
+      }
+    } catch (_) {}
+    eyeModeEl.addEventListener('change', () => applyEyeMode(eyeModeEl.value));
 
     mixProfileEl.addEventListener('change', () => {
       getCtx();
