@@ -472,8 +472,8 @@
           <input id="autoChords" type="checkbox" checked />
           <span>Auto chords</span>
         </label>
-        <label class="accomp-field" for="keyLock">
-          <span>Key</span>
+        <label class="accomp-field" for="keyLock" title="Lock a major/minor key: white keys play that scale">
+          <span>Key / scale</span>
           <select id="keyLock"></select>
         </label>
         <label class="accomp-field" for="accompSound">
@@ -561,7 +561,7 @@
     </section>
 
     <footer>
-      <div class="kbd-help">Keyboard: <code>z s x d c v g b h n j m , q 2 w 3 e r 5 t 6 y 7</code> · Web Audio ensemble</div>
+      <div class="kbd-help">Keyboard: <code>z x c v b n m , q w e r t y</code> (white) · pick <strong>Key / scale</strong> to play any major/minor on white keys</div>
       <div class="credit"><strong>P2A3S2V</strong> version 2026.8<br>Created by Parikshit Kumar Singh and all family members</div>
     </footer>
   </div>
@@ -572,10 +572,16 @@
     const midiToName = (midi) => noteNames[midi % 12] + (Math.floor(midi / 12) - 1);
 
     // Layout-stable codes so Shift doesn't remap digit keys mid-run.
-    const KEY_CODES = [
-      'KeyZ','KeyS','KeyX','KeyD','KeyC','KeyV','KeyG','KeyB','KeyH','KeyN','KeyJ','KeyM','Comma',
-      'KeyQ','Digit2','KeyW','Digit3','KeyE','KeyR','Digit5','KeyT','Digit6','KeyY','Digit7'
+    // White-row codes play scale degrees when a Key/scale is locked.
+    const WHITE_KEY_CODES = [
+      'KeyZ','KeyX','KeyC','KeyV','KeyB','KeyN','KeyM','Comma',
+      'KeyQ','KeyW','KeyE','KeyR','KeyT','KeyY'
     ];
+    const BLACK_KEY_CODES = [
+      'KeyS','KeyD','KeyG','KeyH','KeyJ',
+      'Digit2','Digit3','Digit5','Digit6','Digit7'
+    ];
+    const KEY_CODES = [...WHITE_KEY_CODES, ...BLACK_KEY_CODES];
 
     const whiteKeysEl = document.getElementById('whiteKeys');
     const blackKeysEl = document.getElementById('blackKeys');
@@ -2542,15 +2548,18 @@
     (function populateKeyLock() {
       const optAuto = document.createElement('option');
       optAuto.value = 'auto';
-      optAuto.textContent = 'Auto detect';
+      optAuto.textContent = 'Auto detect (chromatic)';
       keyLockEl.appendChild(optAuto);
       for (const mode of ['major', 'minor']) {
+        const group = document.createElement('optgroup');
+        group.label = mode === 'major' ? 'Major — white keys play scale' : 'Minor — white keys play scale';
         for (let t = 0; t < 12; t++) {
           const opt = document.createElement('option');
           opt.value = `${t}:${mode}`;
           opt.textContent = `${noteNames[t]} ${mode}`;
-          keyLockEl.appendChild(opt);
+          group.appendChild(opt);
         }
+        keyLockEl.appendChild(group);
       }
     })();
 
@@ -3069,6 +3078,11 @@
           updateChordReadout(detectedKey, currentChord);
         }
       }
+      // White keys follow the locked major/minor scale (chromatic when Auto).
+      codePressed.clear();
+      pointerNotes.clear();
+      silenceAll();
+      buildKeyboard();
     });
 
     // Initial empty scale strip.
@@ -3104,18 +3118,20 @@
     // ---- Keyboard UI ----
     let startC = 60;
     const keyEls = new Map();
+    const codeToMidi = new Map();
+    const midiToKeyLabel = new Map();
 
-    function keyLabelForMidi(midi) {
-      const idx = midi - startC;
-      if (idx < 0 || idx >= KEY_CODES.length) return null;
-      const code = KEY_CODES[idx];
+    function codeLabel(code) {
       if (code === 'Comma') return ',';
       return code.replace(/^Key/, '').replace(/^Digit/, '').toLowerCase();
     }
 
+    function keyLabelForMidi(midi) {
+      return midiToKeyLabel.get(midi) ?? null;
+    }
+
     function midiForCode(code) {
-      const idx = KEY_CODES.indexOf(code);
-      return idx === -1 ? null : startC + idx;
+      return codeToMidi.has(code) ? codeToMidi.get(code) : null;
     }
 
     function highlightKey(midi, on) {
@@ -3128,44 +3144,91 @@
       highlightKey(midi, midiStillHeld(midi));
     }
 
+    /** Locked major/minor → white keys play that scale; Auto → chromatic C layout. */
+    function playScaleKey() {
+      return keyFromLock(); // null when Auto detect
+    }
+
+    function whiteMidiForDegree(degree) {
+      const locked = playScaleKey();
+      const octaveOffset = Math.floor(degree / 7);
+      const idxInOct = degree % 7;
+      if (!locked) {
+        const whitePattern = [0, 2, 4, 5, 7, 9, 11];
+        return startC + octaveOffset * 12 + whitePattern[idxInOct];
+      }
+      const steps = SCALE_STEPS[locked.mode] || SCALE_STEPS.major;
+      return startC + locked.tonic + octaveOffset * 12 + steps[idxInOct];
+    }
+
     function buildKeyboard() {
       whiteKeysEl.style.setProperty('--white-count', 14);
       whiteKeysEl.innerHTML = '';
       blackKeysEl.innerHTML = '';
       keyEls.clear();
+      codeToMidi.clear();
+      midiToKeyLabel.clear();
 
-      const whitePattern = [0, 2, 4, 5, 7, 9, 11];
-      const blackAfterWhiteIdx = [0, 1, 3, 4, 5];
       const totalWhite = 14;
       const whiteWidthPct = 100 / totalWhite;
       blackKeysEl.style.setProperty('--black-w', (whiteWidthPct * 0.6) + '%');
 
-      for (let w = 0; w < totalWhite; w++) {
-        const octaveOffset = Math.floor(w / 7);
-        const idxInOct = w % 7;
-        const midi = startC + octaveOffset * 12 + whitePattern[idxInOct];
+      const whiteMidis = [];
+      for (let w = 0; w < totalWhite; w++) whiteMidis.push(whiteMidiForDegree(w));
 
+      // Computer white-row keys → scale (or C-major) degrees.
+      WHITE_KEY_CODES.forEach((code, i) => {
+        if (i >= whiteMidis.length) return;
+        const midi = whiteMidis[i];
+        codeToMidi.set(code, midi);
+        midiToKeyLabel.set(midi, codeLabel(code));
+      });
+
+      const blackSlots = []; // { midi, leftPct }
+      for (let w = 0; w < totalWhite - 1; w++) {
+        const lo = whiteMidis[w];
+        const hi = whiteMidis[w + 1];
+        const gap = hi - lo;
+        if (gap <= 1) continue;
+        // Place one or more accidentals evenly between the two white keys.
+        for (let s = 1; s < gap; s++) {
+          const midi = lo + s;
+          const leftPct = (w + s / gap) * whiteWidthPct;
+          blackSlots.push({ midi, leftPct });
+        }
+      }
+
+      BLACK_KEY_CODES.forEach((code, i) => {
+        if (i >= blackSlots.length) return;
+        const midi = blackSlots[i].midi;
+        codeToMidi.set(code, midi);
+        midiToKeyLabel.set(midi, codeLabel(code));
+      });
+
+      for (let w = 0; w < totalWhite; w++) {
+        const midi = whiteMidis[w];
         const k = document.createElement('div');
         k.className = 'white-key';
         k.dataset.midi = String(midi);
-        k.title = `${midiToName(midi)}\nKey: ${keyLabelForMidi(midi) ?? '—'}`;
+        const lbl = keyLabelForMidi(midi);
+        k.title = `${midiToName(midi)}\nKey: ${lbl ?? '—'}`;
         k.innerHTML = `<span>${midiToName(midi)}</span>`;
         attachKeyPointer(k, midi);
         whiteKeysEl.appendChild(k);
         keyEls.set(midi, k);
+      }
 
-        if (blackAfterWhiteIdx.includes(idxInOct)) {
-          const blackMidi = midi + 1;
-          const b = document.createElement('div');
-          b.className = 'black-key';
-          b.dataset.midi = String(blackMidi);
-          b.title = `${midiToName(blackMidi)}\nKey: ${keyLabelForMidi(blackMidi) ?? '—'}`;
-          b.innerHTML = `<span>${midiToName(blackMidi)}</span>`;
-          b.style.left = ((w + 1) * whiteWidthPct) + '%';
-          attachKeyPointer(b, blackMidi);
-          blackKeysEl.appendChild(b);
-          keyEls.set(blackMidi, b);
-        }
+      for (const slot of blackSlots) {
+        const b = document.createElement('div');
+        b.className = 'black-key';
+        b.dataset.midi = String(slot.midi);
+        const lbl = keyLabelForMidi(slot.midi);
+        b.title = `${midiToName(slot.midi)}\nKey: ${lbl ?? '—'}`;
+        b.innerHTML = `<span>${midiToName(slot.midi)}</span>`;
+        b.style.left = slot.leftPct + '%';
+        attachKeyPointer(b, slot.midi);
+        blackKeysEl.appendChild(b);
+        keyEls.set(slot.midi, b);
       }
     }
 
