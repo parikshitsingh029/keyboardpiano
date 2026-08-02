@@ -141,6 +141,7 @@
         <label>Playback</label>
         <div class="row">
           <button id="playBtn" disabled>▶ Play</button>
+          <button id="stopPlayBtn" class="btn-outline" disabled>■ Stop</button>
           <button id="clearBtn" class="btn-outline" disabled>Clear</button>
         </div>
       </div>
@@ -176,8 +177,14 @@
     // ---------- Audio Engine ----------
     let audioCtx = null;
     let masterGain = null;
-    const activeVoices = new Map(); // midi -> {osc1, osc2, gain, filter}
+    const activeVoices = new Map(); // midi -> {osc1, osc2, gain, filter, ...}
     const sustained = new Set();
+    const audioDot = () => document.getElementById('audioDot');
+
+    const syncAudioDot = () => {
+      const on = !!(audioCtx && audioCtx.state === 'running');
+      audioDot().classList.toggle('off', !on);
+    };
 
     const getCtx = () => {
       if (!audioCtx) {
@@ -185,16 +192,21 @@
         masterGain = audioCtx.createGain();
         masterGain.gain.value = parseFloat(volume.value);
         masterGain.connect(audioCtx.destination);
-        document.getElementById('audioDot').classList.remove('off');
+        audioCtx.addEventListener('statechange', syncAudioDot);
       }
+      // Browsers often start suspended until a user gesture; always try to resume.
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume().then(syncAudioDot).catch(() => syncAudioDot());
+      }
+      syncAudioDot();
       return audioCtx;
     };
 
-    function voiceOn(midi, velocity = 1) {
+    function voiceOn(midi, velocity = 1, when = null) {
       getCtx();
       if (activeVoices.has(midi)) return; // prevent duplicates
 
-      const now = audioCtx.currentTime;
+      const t = when == null ? audioCtx.currentTime : Math.max(when, audioCtx.currentTime);
       const freq = midiToFreq(midi);
 
       const osc1 = audioCtx.createOscillator();
@@ -208,7 +220,7 @@
       osc2.frequency.value = freq * 1.005; // slight detune for richness
 
       filter.type = 'lowpass';
-      filter.frequency.setValueAtTime(9000, now);
+      filter.frequency.setValueAtTime(9000, t);
       filter.Q.value = 0.5;
 
       osc1.connect(filter);
@@ -219,37 +231,63 @@
       // ADSR envelope (piano-like)
       const A = 0.01, D = 0.2, S = 0.65, R = 0.6;
       const peak = Math.max(0.0001, velocity) * 0.9;
-      gain.gain.cancelScheduledValues(now);
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.linearRampToValueAtTime(peak, now + A);
-      gain.gain.linearRampToValueAtTime(peak * S, now + A + D);
+      const sustainLevel = peak * S;
+      gain.gain.cancelScheduledValues(t);
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.linearRampToValueAtTime(peak, t + A);
+      gain.gain.linearRampToValueAtTime(sustainLevel, t + A + D);
 
-      osc1.start(now);
-      osc2.start(now);
+      osc1.start(t);
+      osc2.start(t);
 
-      activeVoices.set(midi, { osc1, osc2, gain, filter, release: R, startedAt: now });
+      activeVoices.set(midi, { osc1, osc2, gain, filter, release: R, startedAt: t, sustainLevel });
     }
 
-    function voiceOff(midi) {
+    function voiceOff(midi, when = null, { ignoreSustain = false } = {}) {
       if (!audioCtx) return;
       const v = activeVoices.get(midi);
       if (!v) return;
-      if (sustain.checked) { sustained.add(midi); return; }
-      const now = audioCtx.currentTime;
+      if (!ignoreSustain && sustain.checked) { sustained.add(midi); return; }
+      const t = when == null ? audioCtx.currentTime : Math.max(when, audioCtx.currentTime);
       const R = v.release;
-      v.gain.gain.cancelScheduledValues(now);
-      v.gain.gain.setValueAtTime(v.gain.gain.value, now);
-      v.gain.gain.linearRampToValueAtTime(0.0001, now + R);
-      v.osc1.stop(now + R + 0.02);
-      v.osc2.stop(now + R + 0.02);
-      setTimeout(() => activeVoices.delete(midi), (R+0.03)*1000);
+      v.gain.gain.cancelScheduledValues(t);
+      // Live releases use the current gain; scheduled (future) releases use sustain level.
+      const level = (when == null || when <= audioCtx.currentTime + 0.002)
+        ? v.gain.gain.value
+        : v.sustainLevel;
+      v.gain.gain.setValueAtTime(Math.max(0.0001, level), t);
+      v.gain.gain.linearRampToValueAtTime(0.0001, t + R);
+      try {
+        v.osc1.stop(t + R + 0.02);
+        v.osc2.stop(t + R + 0.02);
+      } catch (_) { /* already stopped */ }
+      const delayMs = Math.max(0, (t + R + 0.03 - audioCtx.currentTime) * 1000);
+      setTimeout(() => {
+        if (activeVoices.get(midi) === v) activeVoices.delete(midi);
+      }, delayMs);
     }
 
     function flushSustain() {
       if (!audioCtx) return;
       const toRelease = Array.from(sustained);
       sustained.clear();
-      toRelease.forEach(voiceOff);
+      toRelease.forEach((midi) => voiceOff(midi, null, { ignoreSustain: true }));
+    }
+
+    function silenceAll() {
+      if (!audioCtx) return;
+      sustained.clear();
+      const now = audioCtx.currentTime;
+      for (const [, v] of activeVoices) {
+        try {
+          v.gain.gain.cancelScheduledValues(now);
+          v.gain.gain.setValueAtTime(0.0001, now);
+          v.osc1.stop(now + 0.03);
+          v.osc2.stop(now + 0.03);
+        } catch (_) { /* already stopped */ }
+      }
+      activeVoices.clear();
+      document.querySelectorAll('#piano .active').forEach((el) => el.classList.remove('active'));
     }
 
     // ---------- UI Piano Generation ----------
@@ -262,6 +300,7 @@
     const recBtn = document.getElementById('recBtn');
     const stopBtn = document.getElementById('stopBtn');
     const playBtn = document.getElementById('playBtn');
+    const stopPlayBtn = document.getElementById('stopPlayBtn');
     const clearBtn = document.getElementById('clearBtn');
 
     let startC = 60; // C4 default
@@ -398,10 +437,11 @@
     // Sustain checkbox
     sustain.addEventListener('change', () => { if (!sustain.checked) flushSustain(); });
 
-    // ---------- Recording ----------
+    // ---------- Recording & Playback ----------
     let recording = [];
     let isRecording = false;
     let recStart = 0;
+    const playback = { token: 0, timers: [], playing: false };
 
     function addToRecording(type, midi) {
       if (!isRecording) return;
@@ -409,48 +449,103 @@
       recording.push({ type, midi, t });
     }
 
+    function syncTransportUI() {
+      const hasTake = recording.length > 0;
+      recBtn.disabled = isRecording || playback.playing;
+      stopBtn.disabled = !isRecording;
+      playBtn.disabled = isRecording || playback.playing || !hasTake;
+      stopPlayBtn.disabled = !playback.playing;
+      clearBtn.disabled = isRecording || playback.playing || !hasTake;
+      playBtn.textContent = playback.playing ? '▶ Playing…' : '▶ Play';
+    }
+
     function setRecUI(rec) {
       isRecording = rec;
-      recBtn.disabled = rec;
-      stopBtn.disabled = !rec;
-      playBtn.disabled = rec || recording.length === 0;
-      clearBtn.disabled = rec || recording.length === 0;
+      syncTransportUI();
+    }
+
+    function stopPlayback() {
+      playback.token++;
+      playback.timers.forEach(clearTimeout);
+      playback.timers = [];
+      const wasPlaying = playback.playing;
+      playback.playing = false;
+      if (wasPlaying) silenceAll();
+      syncTransportUI();
+    }
+
+    function startPlayback() {
+      if (recording.length === 0 || isRecording) return;
+      stopPlayback();
+      getCtx();
+
+      const token = playback.token;
+      playback.playing = true;
+      syncTransportUI();
+
+      // Anchor the take to the audio clock for tighter timing than bare setTimeout.
+      const base = recording[0].t;
+      const startAt = audioCtx.currentTime + 0.06;
+      let maxOffset = 0;
+
+      for (const ev of recording) {
+        const offset = (ev.t - base) / 1000;
+        maxOffset = Math.max(maxOffset, offset);
+        const when = startAt + offset;
+        // Wake a few ms early; note start/stop still use the audio-clock `when`.
+        const delayMs = Math.max(0, (when - audioCtx.currentTime) * 1000 - 8);
+
+        const id = setTimeout(() => {
+          if (token !== playback.token) return;
+          if (ev.type === 'on') {
+            voiceOn(ev.midi, 1, when);
+            highlightKey(ev.midi, true);
+          } else {
+            voiceOff(ev.midi, when, { ignoreSustain: true });
+            highlightKey(ev.midi, false);
+          }
+        }, delayMs);
+        playback.timers.push(id);
+      }
+
+      // Allow the last release envelope to finish before re-enabling controls.
+      const endId = setTimeout(() => {
+        if (token !== playback.token) return;
+        playback.playing = false;
+        syncTransportUI();
+      }, maxOffset * 1000 + 700);
+      playback.timers.push(endId);
     }
 
     recBtn.addEventListener('click', () => {
+      stopPlayback();
       getCtx();
-      recording = []; recStart = performance.now();
+      recording = [];
+      recStart = performance.now();
       setRecUI(true);
     });
 
     stopBtn.addEventListener('click', () => {
       setRecUI(false);
-      playBtn.disabled = recording.length === 0;
-      clearBtn.disabled = recording.length === 0;
     });
 
     playBtn.addEventListener('click', () => {
-      if (recording.length === 0) return;
-      getCtx();
-      // Normalize start at 0
-      const base = recording[0].t;
-      const seq = recording.map(e => ({ ...e, t: e.t - base }));
-      // Turn off everything first
-      Array.from(activeVoices.keys()).forEach(voiceOff);
-      flushSustain();
-      // Schedule
-      seq.forEach(ev => {
-        setTimeout(() => {
-          if (ev.type === 'on') { voiceOn(ev.midi, 1); highlightKey(ev.midi, true); }
-          else { voiceOff(ev.midi); highlightKey(ev.midi, false); }
-        }, ev.t);
-      });
+      startPlayback();
     });
 
-    clearBtn.addEventListener('click', () => { recording = []; playBtn.disabled = true; clearBtn.disabled = true; });
+    stopPlayBtn.addEventListener('click', () => {
+      stopPlayback();
+    });
+
+    clearBtn.addEventListener('click', () => {
+      stopPlayback();
+      recording = [];
+      syncTransportUI();
+    });
 
     // Build initial keyboard
     buildKeyboard();
+    syncTransportUI();
   </script>
 </body>
 </html>
