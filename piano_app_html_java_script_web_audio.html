@@ -275,9 +275,18 @@
     .staff-panel svg {
       display: block;
       width: 100%;
-      height: 92px;
+      height: 118px;
     }
-    .staff-panel.chord svg { height: 92px; }
+    .staff-panel.chord svg { height: 118px; }
+    .staff-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      margin-top: 4px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .staff-legend strong { font-weight: 700; }
 
     .piano-wrap {
       position: relative;
@@ -409,7 +418,7 @@
       .bpm-readout { margin-left: 0; text-align: left; width: 100%; }
       .credit { text-align: left; }
       .staff-panels { grid-template-columns: 1fr; }
-      .staff-panel svg, .staff-panel.chord svg { height: 84px; }
+      .staff-panel svg, .staff-panel.chord svg { height: 110px; }
       .piano-wrap { min-height: 220px; }
     }
     @media (prefers-reduced-motion: reduce) {
@@ -617,11 +626,15 @@
       </div>
       <div class="staff-panels">
         <div class="staff-panel" data-label="Melody">
-          <svg id="melodyStaff" viewBox="0 0 640 92" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Melody staff"></svg>
+          <svg id="melodyStaff" viewBox="0 0 640 118" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Melody staff"></svg>
         </div>
         <div class="staff-panel chord" data-label="Chord">
-          <svg id="chordStaff" viewBox="0 0 420 92" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Chord staff"></svg>
+          <svg id="chordStaff" viewBox="0 0 420 118" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Chord staff"></svg>
         </div>
+      </div>
+      <div class="staff-legend" id="staffLegend">
+        Treble lines <strong style="color:#e23d3d">E</strong><strong style="color:#3cb86a">G</strong><strong style="color:#3b82f6">B</strong><strong style="color:#e23d3d">D</strong><strong style="color:#f0c419">F</strong>
+        · spaces <strong style="color:#f0c419">F</strong><strong style="color:#3b82f6">A</strong><strong style="color:#e23d3d">C</strong><strong style="color:#f0c419">E</strong> (FACE)
       </div>
     </section>
 
@@ -687,6 +700,7 @@
     const melodyStaffEl = document.getElementById('melodyStaff');
     const chordStaffEl = document.getElementById('chordStaff');
     const staffMetaEl = document.getElementById('staffMeta');
+    const staffLegendEl = document.getElementById('staffLegend');
 
     // ---- Audio engine ----
     // Fast playing fix: releasing voices are NOT kept in currentVoice, and note-on
@@ -2648,6 +2662,24 @@
       return el;
     }
 
+    // Classroom / rainbow note colors (letter → fill).
+    const NOTE_COLORS = {
+      C: '#e23d3d',
+      D: '#f08a24',
+      E: '#f0c419',
+      F: '#3cb86a',
+      G: '#2eb7c9',
+      A: '#3b82f6',
+      B: '#8b5cf6',
+    };
+    const NOTE_TEXT_ON = {
+      C: '#fff', D: '#fff', E: '#3a2a10', F: '#fff', G: '#083038', A: '#fff', B: '#fff',
+    };
+
+    function noteColor(letter) {
+      return NOTE_COLORS[letter] || '#2a221b';
+    }
+
     function drawClef(svg, clef, x, topY, lineGap) {
       if (clef === 'bass') {
         const g = svgEl('g', { fill: '#2a221b' });
@@ -2675,9 +2707,88 @@
         const y = topY + i * lineGap;
         svg.appendChild(svgEl('line', {
           x1: x0, x2: x1, y1: y, y2: y,
-          stroke: '#3a322a', 'stroke-width': 1.1,
+          stroke: '#3a322a', 'stroke-width': 1.15,
         }));
       }
+    }
+
+    /** FACE (spaces) + EGBDF (lines) on treble; ACEG + GBDFA on bass. */
+    function drawStaffGuideLabels(svg, clef, topY, lineGap, xLines, xSpaces) {
+      const trebleLines = [
+        { letter: 'F', octave: 5 }, // top line
+        { letter: 'D', octave: 5 },
+        { letter: 'B', octave: 4 },
+        { letter: 'G', octave: 4 },
+        { letter: 'E', octave: 4 }, // bottom line
+      ];
+      const trebleSpaces = [
+        { letter: 'E', octave: 5 },
+        { letter: 'C', octave: 5 },
+        { letter: 'A', octave: 4 },
+        { letter: 'F', octave: 4 },
+      ];
+      const bassLines = [
+        { letter: 'A', octave: 3 },
+        { letter: 'F', octave: 3 },
+        { letter: 'D', octave: 3 },
+        { letter: 'B', octave: 2 },
+        { letter: 'G', octave: 2 },
+      ];
+      const bassSpaces = [
+        { letter: 'G', octave: 3 },
+        { letter: 'E', octave: 3 },
+        { letter: 'C', octave: 3 },
+        { letter: 'A', octave: 2 },
+      ];
+      const lines = clef === 'bass' ? bassLines : trebleLines;
+      const spaces = clef === 'bass' ? bassSpaces : trebleSpaces;
+
+      lines.forEach((n) => {
+        const y = staffY(n, clef, topY, lineGap);
+        const color = noteColor(n.letter);
+        // Soft colored underline on the staff line itself (short segment).
+        svg.appendChild(svgEl('line', {
+          x1: xLines - 2, x2: xLines + 14, y1: y, y2: y,
+          stroke: color, 'stroke-width': 2.2, 'stroke-linecap': 'round', opacity: 0.85,
+        }));
+        svg.appendChild(svgEl('text', {
+          x: xLines + 6, y: y + 3.2,
+          fill: color,
+          'font-family': 'Sora, sans-serif',
+          'font-size': 10,
+          'font-weight': 700,
+          'text-anchor': 'middle',
+        }, n.letter));
+      });
+
+      spaces.forEach((n) => {
+        const y = staffY(n, clef, topY, lineGap);
+        const color = noteColor(n.letter);
+        svg.appendChild(svgEl('circle', {
+          cx: xSpaces + 6, cy: y, r: 6.2,
+          fill: color, opacity: 0.92,
+        }));
+        svg.appendChild(svgEl('text', {
+          x: xSpaces + 6, y: y + 3.2,
+          fill: NOTE_TEXT_ON[n.letter] || '#fff',
+          'font-family': 'Sora, sans-serif',
+          'font-size': 9,
+          'font-weight': 700,
+          'text-anchor': 'middle',
+        }, n.letter));
+      });
+
+      // Mnemonic caption under the guide column.
+      const tip = clef === 'bass'
+        ? 'Lines GBDFA · Spaces ACEG'
+        : 'Lines EGBDF · Spaces FACE';
+      svg.appendChild(svgEl('text', {
+        x: xLines - 2, y: topY + 4 * lineGap + 14,
+        fill: '#6a5a48',
+        'font-family': 'Sora, sans-serif',
+        'font-size': 9,
+        'font-weight': 650,
+      }, tip));
     }
 
     function drawKeySignature(svg, sig, clef, x, topY, lineGap) {
@@ -2738,57 +2849,80 @@
       return spell.accidental === '#' ? '♯' : '♭';
     }
 
-    function drawNoteHead(svg, x, y, { live = false, ghost = false, topY, lineGap } = {}) {
-      const rx = 5.2;
-      const ry = 3.8;
+    function drawNoteHead(svg, x, y, {
+      live = false, ghost = false, topY, lineGap, letter = 'C', label = 'C',
+    } = {}) {
+      const rx = live ? 7.2 : 6.2;
+      const ry = live ? 5.4 : 4.6;
       drawLedgerLines(svg, x, y, topY, lineGap, rx);
-      const fill = live ? '#c47a2c' : (ghost ? 'rgba(42,34,27,0.28)' : '#2a221b');
+      const base = noteColor(letter);
+      const fill = ghost ? base : base;
+      const opacity = ghost ? 0.32 : (live ? 1 : 0.88);
       const ellipse = svgEl('ellipse', {
         cx: x, cy: y, rx, ry,
         fill,
+        opacity,
         transform: `rotate(-18 ${x} ${y})`,
       });
       svg.appendChild(ellipse);
       if (live) {
         svg.appendChild(svgEl('ellipse', {
-          cx: x, cy: y, rx: rx + 3.5, ry: ry + 2.5,
+          cx: x, cy: y, rx: rx + 3.2, ry: ry + 2.4,
           fill: 'none',
-          stroke: 'rgba(196,122,44,0.45)',
-          'stroke-width': 1.4,
+          stroke: base,
+          'stroke-width': 1.6,
+          opacity: 0.55,
           transform: `rotate(-18 ${x} ${y})`,
         }));
       }
+      // Letter name written on the notehead.
+      svg.appendChild(svgEl('text', {
+        x, y: y + 3.1,
+        fill: ghost ? 'rgba(255,255,255,0.75)' : (NOTE_TEXT_ON[letter] || '#fff'),
+        'font-family': 'Sora, sans-serif',
+        'font-size': live ? 9.5 : 8.5,
+        'font-weight': 700,
+        'text-anchor': 'middle',
+        opacity: ghost ? 0.7 : 1,
+      }, label));
     }
 
     function drawNote(svg, midi, x, sig, clef, topY, lineGap, opts) {
       const spell = spellMidiForStaff(midi, sig.preferFlats);
       const y = staffY(spell, clef, topY, lineGap);
       const acc = noteNeedsAccidental(spell, sig);
+      const color = noteColor(spell.letter);
+      const label = spell.accidental
+        ? `${spell.letter}${spell.accidental === '#' ? '♯' : '♭'}`
+        : spell.letter;
       if (acc) {
         svg.appendChild(svgEl('text', {
-          x: x - 12, y: y + 4,
-          fill: opts.live ? '#c47a2c' : '#2a221b',
+          x: x - (opts.live ? 14 : 12), y: y + 4,
+          fill: color,
           'font-family': 'Georgia, "Times New Roman", serif',
           'font-size': 13,
           'font-weight': 700,
-          opacity: opts.ghost ? 0.35 : 1,
+          opacity: opts.ghost ? 0.4 : 1,
         }, acc));
       }
-      drawNoteHead(svg, x, y, { ...opts, topY, lineGap });
-      return { spell, y };
+      drawNoteHead(svg, x, y, {
+        ...opts, topY, lineGap, letter: spell.letter, label,
+      });
+      return { spell, y, color };
     }
 
     function renderOneStaff(svg, {
       width, midis, trail = [], sig, mode, chordName,
     }) {
       while (svg.firstChild) svg.removeChild(svg.firstChild);
-      const lineGap = 8;
-      const topY = 26;
+      const lineGap = 9;
+      const topY = 22;
       const padL = 8;
       const padR = width - 8;
+      const viewH = 118;
 
       svg.appendChild(svgEl('rect', {
-        x: 0, y: 0, width, height: 92, fill: '#f7f1e6',
+        x: 0, y: 0, width, height: viewH, fill: '#f7f1e6',
       }));
 
       // For chord mode with mixed registers, prefer treble and lift low notes by octaves for readability.
@@ -2814,12 +2948,17 @@
       drawClef(svg, clef, padL + 4, topY, lineGap);
       let cursor = drawKeySignature(svg, sig, clef, padL + 34, topY, lineGap);
 
+      // Colorful FACE / EGBDF (or bass ACEG / GBDFA) guide column.
+      const guideX = Math.max(cursor + 4, 64);
+      drawStaffGuideLabels(svg, clef, topY, lineGap, guideX, guideX + 20);
+      cursor = guideX + 42;
+
       if (mode === 'melody') {
         const liveSet = new Set(midis);
-        const history = trail.filter((n) => !liveSet.has(n.midi)).slice(-14);
-        const slotStart = Math.max(cursor + 10, 70);
-        const liveX = width - 48;
-        const histRight = liveX - 28;
+        const history = trail.filter((n) => !liveSet.has(n.midi)).slice(-12);
+        const slotStart = Math.max(cursor + 8, 110);
+        const liveX = width - 52;
+        const histRight = liveX - 30;
         const span = Math.max(1, histRight - slotStart);
         history.forEach((n, i) => {
           const x = slotStart + (span * (i + 1)) / (history.length + 1);
@@ -2831,39 +2970,42 @@
         });
         // Live column
         svg.appendChild(svgEl('line', {
-          x1: liveX - 16, x2: liveX - 16, y1: topY - 8, y2: topY + 4 * lineGap + 8,
-          stroke: 'rgba(196,122,44,0.35)', 'stroke-width': 1, 'stroke-dasharray': '2 3',
+          x1: liveX - 18, x2: liveX - 18, y1: topY - 6, y2: topY + 4 * lineGap + 6,
+          stroke: 'rgba(196,122,44,0.4)', 'stroke-width': 1, 'stroke-dasharray': '2 3',
         }));
+        svg.appendChild(svgEl('text', {
+          x: liveX + 2, y: topY - 8,
+          fill: '#8a7a66', 'font-size': 9, 'font-family': 'Sora, sans-serif', 'font-weight': 700,
+          'text-anchor': 'middle',
+        }, 'NOW'));
         const live = midis.slice().sort((a, b) => a - b);
         if (live.length === 0) {
           svg.appendChild(svgEl('text', {
-            x: liveX - 4, y: topY + 2 * lineGap + 4,
+            x: liveX - 2, y: topY + 2 * lineGap + 4,
             fill: '#8a7a66', 'font-size': 11, 'font-family': 'Sora, sans-serif',
           }, '—'));
         } else {
-          // Stack simultaneous melody notes with slight x offsets if seconds apart in pitch.
           live.forEach((midi, i) => {
-            const x = liveX + (i % 2) * 7;
+            const x = liveX + (i % 2) * 9;
             drawNote(svg, midi, x, sig, 'treble', topY, lineGap, { live: true });
           });
         }
       } else {
         // Chord: stacked simultaneous noteheads + name.
-        const x = Math.max(cursor + 36, width * 0.42);
+        const x = Math.max(cursor + 28, width * 0.48);
         if (!drawMidis.length) {
           svg.appendChild(svgEl('text', {
             x, y: topY + 2 * lineGap + 4,
             fill: '#8a7a66', 'font-size': 12, 'font-family': 'Sora, sans-serif',
           }, '—'));
         } else {
-          // Offset seconds horizontally when adjacent (standard notation).
           const ys = drawMidis.map((m) => {
             const spell = spellMidiForStaff(m, sig.preferFlats);
             return { midi: m, y: staffY(spell, clef, topY, lineGap), spell };
           });
           ys.forEach((n, i) => {
             let xOff = 0;
-            if (i > 0 && Math.abs(ys[i - 1].y - n.y) < lineGap * 0.55) xOff = 10;
+            if (i > 0 && Math.abs(ys[i - 1].y - n.y) < lineGap * 0.55) xOff = 12;
             drawNote(svg, n.midi, x + xOff, sig, clef, topY, lineGap, { live: true });
           });
         }
