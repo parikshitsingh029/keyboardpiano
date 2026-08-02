@@ -248,6 +248,8 @@
           <optgroup label="Winds &amp; reeds">
             <option value="flute">Flute</option>
             <option value="bansuri">Bansuri</option>
+            <option value="nativeFlute">Native American Flute</option>
+            <option value="dizi">Chinese Dizi</option>
             <option value="shahnai">Shehnai</option>
             <option value="nadaswaram">Nadaswaram</option>
             <option value="harmonium">Harmonium</option>
@@ -383,11 +385,13 @@
       violin:     { attack: 0.08, decay: 0.14, sustain: 0.86, release: 0.28, choke: 0.02, gain: 0.2 },
       viola:      { attack: 0.09, decay: 0.16, sustain: 0.86, release: 0.3, choke: 0.022, gain: 0.22 },
       cello:      { attack: 0.1, decay: 0.18, sustain: 0.88, release: 0.34, choke: 0.025, gain: 0.24 },
-      flute:      { attack: 0.05, decay: 0.1, sustain: 0.82, release: 0.22, choke: 0.02, gain: 0.26 },
-      bansuri:    { attack: 0.07, decay: 0.12, sustain: 0.84, release: 0.26, choke: 0.02, gain: 0.24 },
-      shahnai:    { attack: 0.05, decay: 0.12, sustain: 0.9, release: 0.28, choke: 0.02, gain: 0.2 },
-      nadaswaram: { attack: 0.06, decay: 0.14, sustain: 0.92, release: 0.32, choke: 0.022, gain: 0.22 },
-      harmonium:  { attack: 0.04, decay: 0.1, sustain: 0.92, release: 0.3, choke: 0.015, gain: 0.2 },
+      flute:       { attack: 0.05, decay: 0.1, sustain: 0.82, release: 0.22, choke: 0.02, gain: 0.26 },
+      bansuri:     { attack: 0.07, decay: 0.12, sustain: 0.84, release: 0.26, choke: 0.02, gain: 0.24 },
+      nativeFlute: { attack: 0.08, decay: 0.14, sustain: 0.86, release: 0.3, choke: 0.025, gain: 0.24 },
+      dizi:        { attack: 0.04, decay: 0.1, sustain: 0.85, release: 0.24, choke: 0.02, gain: 0.23 },
+      shahnai:     { attack: 0.05, decay: 0.12, sustain: 0.9, release: 0.28, choke: 0.02, gain: 0.2 },
+      nadaswaram:  { attack: 0.06, decay: 0.14, sustain: 0.92, release: 0.32, choke: 0.022, gain: 0.22 },
+      harmonium:   { attack: 0.04, decay: 0.1, sustain: 0.92, release: 0.3, choke: 0.015, gain: 0.2 },
     };
     const BASIC_WAVES = new Set(['sine', 'triangle', 'sawtooth', 'square']);
     const PLUCK_KINDS = new Set(['guitar', 'mandolin', 'ukulele', 'banjo', 'santoor']);
@@ -1130,6 +1134,140 @@
       };
     }
 
+    function buildNativeFluteVoice(freq, t) {
+      // Warm, woody, pentatonic-friendly flute: soft fundamental, gentle air, slow vibrato.
+      const osc = audioCtx.createOscillator();
+      const osc2 = audioCtx.createOscillator();
+      const filter = audioCtx.createBiquadFilter();
+      const body = audioCtx.createBiquadFilter();
+      const breathFilter = audioCtx.createBiquadFilter();
+      const breathGain = audioCtx.createGain();
+      const vibrato = audioCtx.createOscillator();
+      const vibratoGain = audioCtx.createGain();
+      const gain = audioCtx.createGain();
+      const noise = audioCtx.createBufferSource();
+      const mix2 = audioCtx.createGain();
+
+      osc.type = 'sine';
+      osc2.type = 'sine';
+      osc.frequency.setValueAtTime(freq, t);
+      osc2.frequency.setValueAtTime(freq * 2, t);
+      mix2.gain.value = 0.08;
+
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(Math.min(1600, freq * 2.8), t);
+      filter.Q.setValueAtTime(0.4, t);
+      body.type = 'bandpass';
+      body.frequency.setValueAtTime(Math.min(900, freq * 1.8), t);
+      body.Q.setValueAtTime(0.9, t);
+
+      noise.buffer = getNoiseBuffer();
+      noise.loop = true;
+      breathFilter.type = 'bandpass';
+      breathFilter.frequency.setValueAtTime(Math.min(1400, freq * 2.2), t);
+      breathFilter.Q.setValueAtTime(0.5, t);
+      breathGain.gain.setValueAtTime(0.055, t);
+
+      vibrato.type = 'sine';
+      vibrato.frequency.setValueAtTime(4.2, t);
+      vibratoGain.gain.setValueAtTime(0.0001, t);
+      vibratoGain.gain.linearRampToValueAtTime(freq * 0.004, t + 0.35);
+      vibrato.connect(vibratoGain);
+      vibratoGain.connect(osc.frequency);
+
+      osc.connect(body);
+      osc2.connect(mix2);
+      mix2.connect(body);
+      body.connect(filter);
+      filter.connect(gain);
+      noise.connect(breathFilter);
+      breathFilter.connect(breathGain);
+      breathGain.connect(gain);
+      gain.connect(masterGain);
+
+      osc.start(t);
+      osc2.start(t);
+      noise.start(t);
+      vibrato.start(t);
+
+      return {
+        oscillators: [osc, osc2, noise, vibrato],
+        nodes: [osc, osc2, mix2, filter, body, noise, breathFilter, breathGain, vibrato, vibratoGain, gain],
+        gain,
+      };
+    }
+
+    function buildDiziVoice(freq, t) {
+      // Chinese dizi: bright bamboo flute with dimo membrane buzz.
+      const osc = audioCtx.createOscillator();
+      const osc2 = audioCtx.createOscillator();
+      const buzz = audioCtx.createOscillator();
+      const filter = audioCtx.createBiquadFilter();
+      const membrane = audioCtx.createBiquadFilter();
+      const breathFilter = audioCtx.createBiquadFilter();
+      const breathGain = audioCtx.createGain();
+      const buzzGain = audioCtx.createGain();
+      const vibrato = audioCtx.createOscillator();
+      const vibratoGain = audioCtx.createGain();
+      const gain = audioCtx.createGain();
+      const noise = audioCtx.createBufferSource();
+      const mix2 = audioCtx.createGain();
+
+      osc.type = 'sine';
+      osc2.type = 'triangle';
+      buzz.type = 'square';
+      osc.frequency.setValueAtTime(freq, t);
+      osc2.frequency.setValueAtTime(freq, t);
+      buzz.frequency.setValueAtTime(freq * 2, t);
+      mix2.gain.value = 0.2;
+      buzzGain.gain.value = 0.045;
+
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(Math.min(4200, freq * 5.5), t);
+      filter.Q.setValueAtTime(0.6, t);
+      // Dimo membrane: focused nasal buzz band.
+      membrane.type = 'bandpass';
+      membrane.frequency.setValueAtTime(Math.min(3200, freq * 4.2), t);
+      membrane.Q.setValueAtTime(3.2, t);
+
+      noise.buffer = getNoiseBuffer();
+      noise.loop = true;
+      breathFilter.type = 'bandpass';
+      breathFilter.frequency.setValueAtTime(Math.min(2600, freq * 3.4), t);
+      breathFilter.Q.setValueAtTime(0.8, t);
+      breathGain.gain.setValueAtTime(0.04, t);
+
+      vibrato.type = 'sine';
+      vibrato.frequency.setValueAtTime(5.8, t);
+      vibratoGain.gain.setValueAtTime(freq * 0.0038, t);
+      vibrato.connect(vibratoGain);
+      vibratoGain.connect(osc.frequency);
+
+      osc.connect(filter);
+      osc2.connect(mix2);
+      mix2.connect(filter);
+      buzz.connect(buzzGain);
+      buzzGain.connect(membrane);
+      membrane.connect(filter);
+      filter.connect(gain);
+      noise.connect(breathFilter);
+      breathFilter.connect(breathGain);
+      breathGain.connect(gain);
+      gain.connect(masterGain);
+
+      osc.start(t);
+      osc2.start(t);
+      buzz.start(t);
+      noise.start(t);
+      vibrato.start(t);
+
+      return {
+        oscillators: [osc, osc2, buzz, noise, vibrato],
+        nodes: [osc, osc2, buzz, mix2, buzzGain, filter, membrane, noise, breathFilter, breathGain, vibrato, vibratoGain, gain],
+        gain,
+      };
+    }
+
     function buildDoubleReedVoice(freq, t, kind) {
       const cfg = kind === 'nadaswaram'
         ? { body: 1400, bright: 3800, vib: 5.0, breath: 0.04, gain2: 0.55 }
@@ -1204,6 +1342,8 @@
       if (instrument === 'harmonium') return buildHarmoniumVoice(freq, t);
       if (instrument === 'flute') return buildFluteVoice(freq, t);
       if (instrument === 'bansuri') return buildBansuriVoice(freq, t);
+      if (instrument === 'nativeFlute') return buildNativeFluteVoice(freq, t);
+      if (instrument === 'dizi') return buildDiziVoice(freq, t);
       if (instrument === 'violin' || instrument === 'viola' || instrument === 'cello') {
         return buildStringVoice(freq, t, instrument);
       }
