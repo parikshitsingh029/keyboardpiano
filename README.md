@@ -4,12 +4,15 @@
 
 Created by **Parikshit Kumar Singh** and all family members.
 
-Open `piano_app_html_java_script_web_audio.html` in a modern browser.
+## Open
+
+Open `piano_app_html_java_script_web_audio.html` in a modern browser (keep `bhajans_db.js` in the same folder).
 
 ## Highlights
 
-- Melody instruments (flutes, piano/organ, fretted, bowed, clarinet & sax family, reeds, harmonium variants)
-- Auto chords with key lock and accompaniment sounds
-- Taal rhythm with Indian and world/kit percussion
-- Live scale, chord, bol, and BPM readouts
-- **Studio** / **Stage** master mix profiles (EQ, saturation, hall, stereo width, limiter)
+- Melody instruments, auto chords, taal rhythm, live staff notation
+- White keys follow locked major/minor scales
+- Studio / Stage mix · Eyes Comfort / Focus
+- **Bhajan helper:** Top 100 Hindu bhajans with search autosuggest and dropdowns for deity, scale (major/minor), key, and taal — **Apply** sets the keyboard scale and taal
+
+Scale/taal values are common-practice suggestions for practice and may vary by region or singer.

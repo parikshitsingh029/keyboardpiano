@@ -364,6 +364,155 @@
     }
     .staff-legend strong { font-weight: 700; }
 
+    .bhajan-helper {
+      padding: 10px 16px 12px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(0,0,0,.04);
+    }
+    .bhajan-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+    }
+    .bhajan-head h2 {
+      margin: 0;
+      font-family: "Source Serif 4", Georgia, serif;
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .bhajan-head .muted { font-size: 11px; }
+    .bhajan-filters {
+      display: grid;
+      grid-template-columns: minmax(180px, 2fr) repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      align-items: end;
+    }
+    .bhajan-field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 0;
+      position: relative;
+    }
+    .bhajan-field label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+    }
+    .bhajan-field input[type="search"],
+    .bhajan-field select {
+      width: 100%;
+      background: var(--control-face);
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px 9px;
+      font: inherit;
+      font-size: 12px;
+    }
+    .bhajan-suggest {
+      position: absolute;
+      left: 0; right: 0;
+      top: calc(100% + 2px);
+      z-index: 20;
+      max-height: 220px;
+      overflow: auto;
+      background: var(--bg2);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      display: none;
+    }
+    .bhajan-suggest.open { display: block; }
+    .bhajan-suggest button {
+      display: block;
+      width: 100%;
+      text-align: left;
+      background: transparent;
+      border: 0;
+      border-bottom: 1px solid var(--line);
+      border-radius: 0;
+      color: var(--text);
+      padding: 8px 10px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .bhajan-suggest button:last-child { border-bottom: 0; }
+    .bhajan-suggest button:hover,
+    .bhajan-suggest button.active {
+      background: rgba(196,160,106,.12);
+    }
+    .bhajan-suggest .sug-title { font-weight: 650; }
+    .bhajan-suggest .sug-meta { color: var(--muted); font-size: 11px; margin-top: 2px; }
+    .bhajan-results {
+      margin-top: 8px;
+      display: grid;
+      gap: 6px;
+      max-height: 180px;
+      overflow: auto;
+    }
+    .bhajan-card {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px 12px;
+      align-items: center;
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--panel);
+    }
+    .bhajan-card .name {
+      font-family: "Source Serif 4", Georgia, serif;
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .bhajan-card .meta {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+    .bhajan-card .tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 5px;
+    }
+    .bhajan-tag {
+      font-size: 10px;
+      padding: 2px 7px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: var(--chip-face);
+      color: var(--text);
+    }
+    .bhajan-tag.scale { color: var(--accent2); }
+    .bhajan-tag.taal { color: var(--accent); }
+    .bhajan-card .actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+    .bhajan-card button {
+      width: auto;
+      padding: 6px 10px;
+      font-size: 11px;
+      background: var(--control-face);
+    }
+    .bhajan-card button.primary {
+      background: rgba(196,160,106,.18);
+      border-color: rgba(196,160,106,.35);
+      color: var(--accent);
+    }
+    .bhajan-status { margin-top: 6px; font-size: 11px; color: var(--muted); }
+    @media (max-width: 920px) {
+      .bhajan-filters { grid-template-columns: 1fr 1fr; }
+      .bhajan-field.search { grid-column: span 2; }
+      .bhajan-card { grid-template-columns: 1fr; }
+      .bhajan-card .actions { justify-content: flex-start; }
+    }
+
     .piano-wrap {
       position: relative;
       flex: 1 1 auto;
@@ -705,6 +854,42 @@
       </div>
     </section>
 
+    <section class="bhajan-helper" aria-label="Bhajan helper database">
+      <div class="bhajan-head">
+        <h2>Bhajan helper</h2>
+        <span class="muted">Top 100 Hindu bhajans · lookup scale (major/minor) &amp; taal · autosuggest search</span>
+      </div>
+      <div class="bhajan-filters">
+        <div class="bhajan-field search">
+          <label for="bhajanSearch">Search</label>
+          <input id="bhajanSearch" type="search" placeholder="Type a bhajan name…" autocomplete="off" />
+          <div class="bhajan-suggest" id="bhajanSuggest" role="listbox" aria-label="Bhajan suggestions"></div>
+        </div>
+        <div class="bhajan-field">
+          <label for="bhajanDeity">Deity / theme</label>
+          <select id="bhajanDeity"></select>
+        </div>
+        <div class="bhajan-field">
+          <label for="bhajanMode">Scale</label>
+          <select id="bhajanMode">
+            <option value="all" selected>Major &amp; minor</option>
+            <option value="major">Major only</option>
+            <option value="minor">Minor only</option>
+          </select>
+        </div>
+        <div class="bhajan-field">
+          <label for="bhajanKey">Key</label>
+          <select id="bhajanKey"></select>
+        </div>
+        <div class="bhajan-field">
+          <label for="bhajanTaal">Taal</label>
+          <select id="bhajanTaal"></select>
+        </div>
+      </div>
+      <div class="bhajan-results" id="bhajanResults"></div>
+      <div class="bhajan-status" id="bhajanStatus">Loading bhajan database…</div>
+    </section>
+
     <section class="staff-wrap" aria-label="Live staff notation">
       <div class="staff-head">
         <span class="staff-title">Live staff</span>
@@ -742,6 +927,7 @@
     </footer>
   </div>
 
+  <script src="bhajans_db.js"></script>
   <script>
     const noteNames = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
     const midiToFreq = (midi) => 440 * Math.pow(2, (midi - 69) / 12);
@@ -789,6 +975,14 @@
     const bpmMetaEl = document.getElementById('bpmMeta');
     const mixProfileEl = document.getElementById('mixProfile');
     const eyeModeEl = document.getElementById('eyeMode');
+    const bhajanSearchEl = document.getElementById('bhajanSearch');
+    const bhajanSuggestEl = document.getElementById('bhajanSuggest');
+    const bhajanDeityEl = document.getElementById('bhajanDeity');
+    const bhajanModeEl = document.getElementById('bhajanMode');
+    const bhajanKeyEl = document.getElementById('bhajanKey');
+    const bhajanTaalEl = document.getElementById('bhajanTaal');
+    const bhajanResultsEl = document.getElementById('bhajanResults');
+    const bhajanStatusEl = document.getElementById('bhajanStatus');
     const melodyStaffEl = document.getElementById('melodyStaff');
     const chordStaffEl = document.getElementById('chordStaff');
     const staffMetaEl = document.getElementById('staffMeta');
@@ -4563,6 +4757,13 @@
     // Capture phase so piano keys win before dropdowns consume them.
     window.addEventListener('keydown', (e) => {
       if (!KEY_CODES.includes(e.code)) return;
+      // Let the bhajan search box (and other text fields) receive typing.
+      const ae = document.activeElement;
+      if (ae) {
+        const tag = ae.tagName;
+        const type = (ae.type || '').toLowerCase();
+        if (tag === 'TEXTAREA' || (tag === 'INPUT' && (type === 'search' || type === 'text'))) return;
+      }
       e.preventDefault();
       e.stopPropagation();
       blurFormControls();
@@ -4587,7 +4788,7 @@
     }, true);
 
     // Extra guard: ignore letter/digit typeahead on our dropdowns for piano keys.
-    for (const el of [wave, octaveSel, keyLockEl, accompSoundEl, taalSelectEl, percSelectEl, mixProfileEl, eyeModeEl]) {
+    for (const el of [wave, octaveSel, keyLockEl, accompSoundEl, taalSelectEl, percSelectEl, mixProfileEl, eyeModeEl, bhajanDeityEl, bhajanModeEl, bhajanKeyEl, bhajanTaalEl]) {
       el.addEventListener('keydown', (e) => {
         if (KEY_CODES.includes(e.code)) {
           e.preventDefault();
@@ -4772,9 +4973,217 @@
       syncTransportUI();
     });
 
+    // ---- Bhajan helper DB (search + dropdown filters + autosuggest) ----
+    const BHAJAN_TAAL_LABELS = {
+      keherwa: 'Keherwa (8)',
+      bhajani: 'Bhajani (8)',
+      dadra: 'Dadra (6)',
+      rupak: 'Rupak (7)',
+      jhaptaal: 'Jhaptaal (10)',
+      ektaal: 'Ektaal (12)',
+      deepchandi: 'Deepchandi (14)',
+      teentaal: 'Teentaal (16)',
+    };
+
+    function bhajanScaleLabel(b) {
+      return `${noteNames[b.tonic]} ${b.mode}`;
+    }
+
+    function bhajanHaystack(b) {
+      return [b.title, ...(b.aliases || []), b.deity, b.tradition, bhajanScaleLabel(b), b.taal]
+        .join(' ')
+        .toLowerCase();
+    }
+
+    function filterBhajans() {
+      const db = Array.isArray(window.BHAJAN_DB) ? window.BHAJAN_DB : [];
+      const q = (bhajanSearchEl.value || '').trim().toLowerCase();
+      const deity = bhajanDeityEl.value;
+      const mode = bhajanModeEl.value;
+      const key = bhajanKeyEl.value;
+      const taal = bhajanTaalEl.value;
+      return db.filter((b) => {
+        if (deity !== 'all' && b.deity !== deity) return false;
+        if (mode !== 'all' && b.mode !== mode) return false;
+        if (key !== 'all' && String(b.tonic) !== key) return false;
+        if (taal !== 'all' && b.taal !== taal) return false;
+        if (!q) return true;
+        return bhajanHaystack(b).includes(q);
+      });
+    }
+
+    function autosuggestBhajans(limit = 8) {
+      const db = Array.isArray(window.BHAJAN_DB) ? window.BHAJAN_DB : [];
+      const q = (bhajanSearchEl.value || '').trim().toLowerCase();
+      if (!q) return [];
+      const scored = [];
+      for (const b of db) {
+        const title = b.title.toLowerCase();
+        const aliases = (b.aliases || []).map((a) => a.toLowerCase());
+        let score = 0;
+        if (title.startsWith(q)) score = 100 - title.length;
+        else if (title.includes(q)) score = 70 - title.indexOf(q);
+        else if (aliases.some((a) => a.startsWith(q))) score = 60;
+        else if (aliases.some((a) => a.includes(q))) score = 40;
+        else if (bhajanHaystack(b).includes(q)) score = 20;
+        if (score > 0) scored.push({ b, score });
+      }
+      scored.sort((a, c) => c.score - a.score || a.b.title.localeCompare(c.b.title));
+      return scored.slice(0, limit).map((s) => s.b);
+    }
+
+    function renderBhajanSuggest() {
+      const items = autosuggestBhajans();
+      if (!items.length || !(bhajanSearchEl.value || '').trim()) {
+        bhajanSuggestEl.classList.remove('open');
+        bhajanSuggestEl.innerHTML = '';
+        return;
+      }
+      bhajanSuggestEl.innerHTML = items.map((b, i) => `
+        <button type="button" role="option" data-id="${b.id}" class="${i === 0 ? 'active' : ''}">
+          <div class="sug-title">${b.title}</div>
+          <div class="sug-meta">${bhajanScaleLabel(b)} · ${BHAJAN_TAAL_LABELS[b.taal] || b.taal} · ${b.deity}</div>
+        </button>
+      `).join('');
+      bhajanSuggestEl.classList.add('open');
+      bhajanSuggestEl.querySelectorAll('button').forEach((btn) => {
+        btn.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          const id = parseInt(btn.dataset.id, 10);
+          const b = (window.BHAJAN_DB || []).find((x) => x.id === id);
+          if (!b) return;
+          bhajanSearchEl.value = b.title;
+          bhajanSuggestEl.classList.remove('open');
+          renderBhajanResults(filterBhajans().filter((x) => x.id === b.id).concat(
+            filterBhajans().filter((x) => x.id !== b.id)
+          ));
+        });
+      });
+    }
+
+    function applyBhajanToKeyboard(b, { enableRhythm = true } = {}) {
+      if (!b) return;
+      keyLockEl.value = `${b.tonic}:${b.mode}`;
+      keyLockEl.dispatchEvent(new Event('change'));
+      if (BHAJAN_TAAL_LABELS[b.taal]) {
+        taalSelectEl.value = b.taal;
+        taalSelectEl.dispatchEvent(new Event('change'));
+      }
+      if (enableRhythm) {
+        rhythmEnabledEl.checked = true;
+        rhythmEnabledEl.dispatchEvent(new Event('change'));
+      }
+      if (b.bpmHint) {
+        tempoState.bpm = b.bpmHint;
+        tempoState.displayBpm = b.bpmHint;
+        tempoState.confident = true;
+        updateBpmUi();
+      }
+      bhajanStatusEl.textContent =
+        `Applied “${b.title}” → ${bhajanScaleLabel(b)}, ${BHAJAN_TAAL_LABELS[b.taal] || b.taal}` +
+        (b.bpmHint ? `, ~${b.bpmHint} BPM` : '') +
+        ' · white keys follow this scale';
+      scheduleStaffUpdate();
+    }
+
+    function renderBhajanResults(list) {
+      const rows = list || filterBhajans();
+      if (!rows.length) {
+        bhajanResultsEl.innerHTML = '';
+        bhajanStatusEl.textContent = 'No bhajans match these filters. Clear search or widen dropdowns.';
+        return;
+      }
+      bhajanResultsEl.innerHTML = rows.slice(0, 40).map((b) => `
+        <article class="bhajan-card" data-id="${b.id}">
+          <div>
+            <div class="name">${b.title}</div>
+            <div class="meta">${b.deity} · ${b.tradition}${(b.aliases && b.aliases.length) ? ' · also: ' + b.aliases.slice(0, 2).join(', ') : ''}</div>
+            <div class="tags">
+              <span class="bhajan-tag scale">${bhajanScaleLabel(b)}</span>
+              <span class="bhajan-tag taal">${BHAJAN_TAAL_LABELS[b.taal] || b.taal}</span>
+              <span class="bhajan-tag">${b.mode}</span>
+              ${b.bpmHint ? `<span class="bhajan-tag">~${b.bpmHint} BPM</span>` : ''}
+            </div>
+          </div>
+          <div class="actions">
+            <button type="button" class="primary" data-act="apply">Apply scale &amp; taal</button>
+            <button type="button" data-act="scale">Scale only</button>
+          </div>
+        </article>
+      `).join('');
+      bhajanResultsEl.querySelectorAll('.bhajan-card').forEach((card) => {
+        const id = parseInt(card.dataset.id, 10);
+        const b = (window.BHAJAN_DB || []).find((x) => x.id === id);
+        card.querySelectorAll('button').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            if (!b) return;
+            if (btn.dataset.act === 'scale') {
+              keyLockEl.value = `${b.tonic}:${b.mode}`;
+              keyLockEl.dispatchEvent(new Event('change'));
+              bhajanStatusEl.textContent = `Applied scale only: ${bhajanScaleLabel(b)} for “${b.title}”`;
+            } else {
+              applyBhajanToKeyboard(b);
+            }
+          });
+        });
+      });
+      const extra = rows.length > 40 ? ` · showing 40 of ${rows.length}` : '';
+      bhajanStatusEl.textContent = `${rows.length} bhajan${rows.length === 1 ? '' : 's'} · common-practice scale/taal suggestions${extra}`;
+    }
+
+    function initBhajanHelper() {
+      const db = Array.isArray(window.BHAJAN_DB) ? window.BHAJAN_DB : [];
+      if (!db.length) {
+        bhajanStatusEl.textContent = 'Bhajan database missing — ensure bhajans_db.js is next to this file.';
+        return;
+      }
+
+      const deities = [...new Set(db.map((b) => b.deity))].sort();
+      bhajanDeityEl.innerHTML = `<option value="all">All deities</option>` +
+        deities.map((d) => `<option value="${d}">${d}</option>`).join('');
+
+      bhajanKeyEl.innerHTML = `<option value="all">All keys</option>` +
+        noteNames.map((n, i) => `<option value="${i}">${n}</option>`).join('');
+
+      const taals = [...new Set(db.map((b) => b.taal))];
+      bhajanTaalEl.innerHTML = `<option value="all">All taals</option>` +
+        taals.map((t) => `<option value="${t}">${BHAJAN_TAAL_LABELS[t] || t}</option>`).join('');
+
+      const refresh = () => {
+        renderBhajanSuggest();
+        renderBhajanResults();
+      };
+      bhajanSearchEl.addEventListener('input', refresh);
+      bhajanSearchEl.addEventListener('focus', () => renderBhajanSuggest());
+      bhajanSearchEl.addEventListener('blur', () => {
+        setTimeout(() => bhajanSuggestEl.classList.remove('open'), 120);
+      });
+      bhajanSearchEl.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          bhajanSuggestEl.classList.remove('open');
+          return;
+        }
+        if (e.key === 'Enter') {
+          const first = bhajanSuggestEl.querySelector('button');
+          if (first && bhajanSuggestEl.classList.contains('open')) {
+            e.preventDefault();
+            first.dispatchEvent(new Event('mousedown'));
+          } else {
+            renderBhajanResults();
+          }
+        }
+      });
+      for (const el of [bhajanDeityEl, bhajanModeEl, bhajanKeyEl, bhajanTaalEl]) {
+        el.addEventListener('change', () => renderBhajanResults());
+      }
+      renderBhajanResults();
+      bhajanStatusEl.textContent = `${db.length} bhajans loaded · search or use dropdowns · Apply sets Key/scale + Taal`;
+    }
+
     buildKeyboard();
     syncTransportUI();
     renderStaffNotation();
+    initBhajanHelper();
   </script>
 </body>
 </html>
