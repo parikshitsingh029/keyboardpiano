@@ -178,7 +178,13 @@
       border-bottom: 1px solid #202a48;
       flex-wrap: wrap;
     }
-    .accomp-toggle {
+    .accomp-left {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .accomp-toggle, .accomp-field {
       display: inline-flex;
       align-items: center;
       gap: 8px;
@@ -188,6 +194,8 @@
       user-select: none;
     }
     .accomp-toggle input { width: 16px; height: 16px; }
+    .accomp-field select { padding: 6px 8px; }
+    .accomp-field input[type="range"] { width: 90px; }
     .chord-readout {
       display: flex;
       align-items: baseline;
@@ -263,10 +271,20 @@
     </section>
 
     <section class="accomp">
-      <label class="accomp-toggle">
-        <input id="autoChords" type="checkbox" checked />
-        <span>Auto chords from melody</span>
-      </label>
+      <div class="accomp-left">
+        <label class="accomp-toggle">
+          <input id="autoChords" type="checkbox" checked />
+          <span>Auto chords</span>
+        </label>
+        <label class="accomp-field" for="keyLock">
+          <span>Key</span>
+          <select id="keyLock"></select>
+        </label>
+        <label class="accomp-field" for="accompLevel">
+          <span>Accomp</span>
+          <input id="accompLevel" type="range" min="0" max="1" step="0.01" value="0.55" />
+        </label>
+      </div>
       <div class="chord-readout" id="chordReadout">
         <span class="chord-name" id="chordName">—</span>
         <span class="chord-meta" id="chordMeta">Play a melody to detect key &amp; chords</span>
@@ -310,6 +328,8 @@
     const clearBtn = document.getElementById('clearBtn');
     const audioDotEl = document.getElementById('audioDot');
     const autoChordsEl = document.getElementById('autoChords');
+    const keyLockEl = document.getElementById('keyLock');
+    const accompLevelEl = document.getElementById('accompLevel');
     const chordNameEl = document.getElementById('chordName');
     const chordMetaEl = document.getElementById('chordMeta');
 
@@ -324,6 +344,8 @@
     let audioCtx = null;
     let masterGain = null;
     let harmoniumWave = null;
+    let bellowsLfo = null;
+    let bellowsDepth = null;
     const currentVoice = new Map(); // midi -> sounding voice for that key
     const liveVoices = new Set();
     const codePressed = new Set();
@@ -347,6 +369,19 @@
       imag[9] = 0.16;
       harmoniumWave = audioCtx.createPeriodicWave(real, imag, { disableNormalization: false });
       return harmoniumWave;
+    }
+
+    function ensureBellows() {
+      getCtx();
+      if (bellowsLfo) return;
+      // One shared bellows LFO for all harmonium notes (more realistic than per-voice).
+      bellowsLfo = audioCtx.createOscillator();
+      bellowsDepth = audioCtx.createGain();
+      bellowsLfo.type = 'sine';
+      bellowsLfo.frequency.value = 4.8;
+      bellowsDepth.gain.value = 0.05;
+      bellowsLfo.connect(bellowsDepth);
+      bellowsLfo.start();
     }
 
     const syncAudioDot = () => {
@@ -467,6 +502,7 @@
     }
 
     function buildHarmoniumVoice(freq, t) {
+      ensureBellows();
       const waveTable = getHarmoniumWave();
       const osc1 = audioCtx.createOscillator();
       const osc2 = audioCtx.createOscillator();
@@ -474,8 +510,6 @@
       const band = audioCtx.createBiquadFilter();
       const low = audioCtx.createBiquadFilter();
       const tremolo = audioCtx.createGain();
-      const lfo = audioCtx.createOscillator();
-      const lfoDepth = audioCtx.createGain();
       const gain = audioCtx.createGain();
 
       osc1.setPeriodicWave(waveTable);
@@ -500,11 +534,8 @@
       low.frequency.setValueAtTime(4200, t);
       low.Q.setValueAtTime(0.5, t);
 
-      // Gentle bellows tremolo.
+      // Shared bellows modulates all harmonium notes together.
       tremolo.gain.setValueAtTime(1, t);
-      lfo.type = 'sine';
-      lfo.frequency.setValueAtTime(5.2, t);
-      lfoDepth.gain.setValueAtTime(0.045, t);
 
       osc1.connect(mix1);
       osc2.connect(mix2);
@@ -516,17 +547,15 @@
       low.connect(tremolo);
       tremolo.connect(gain);
       gain.connect(masterGain);
-      lfo.connect(lfoDepth);
-      lfoDepth.connect(tremolo.gain);
+      bellowsDepth.connect(tremolo.gain);
 
       osc1.start(t);
       osc2.start(t);
       osc3.start(t);
-      lfo.start(t);
 
       return {
-        oscillators: [osc1, osc2, osc3, lfo],
-        nodes: [osc1, osc2, osc3, mix1, mix2, mix3, band, low, tremolo, lfo, lfoDepth, gain],
+        oscillators: [osc1, osc2, osc3],
+        nodes: [osc1, osc2, osc3, mix1, mix2, mix3, band, low, tremolo, gain],
         gain,
       };
     }
@@ -625,7 +654,6 @@
     }
 
     // ---- Melody → key/chord accompaniment ----
-    // Krumhansl-Schmuckler key profiles (major / minor).
     const MAJOR_PROFILE = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
     const MINOR_PROFILE = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
     const MAJOR_DEGREES = [
@@ -643,19 +671,57 @@
       { deg: 3, q: 'maj', roman: 'III', w: 0.7 },
       { deg: 5, q: 'min', roman: 'iv', w: 0.88 },
       { deg: 7, q: 'min', roman: 'v', w: 0.75 },
-      { deg: 7, q: 'maj', roman: 'V', w: 0.92 }, // harmonic minor dominant
+      { deg: 7, q: 'maj', roman: 'V', w: 0.92 },
       { deg: 8, q: 'maj', roman: 'VI', w: 0.8 },
       { deg: 10, q: 'maj', roman: 'VII', w: 0.6 },
     ];
+    // Common pop/folk movement bonuses (from → to).
+    const PROG_MAJOR = {
+      I:   { I: 0.12, IV: 0.34, V: 0.38, vi: 0.36, ii: 0.22, iii: 0.1 },
+      ii:  { V: 0.42, I: 0.14, IV: 0.12, vi: 0.1 },
+      iii: { vi: 0.28, IV: 0.22, I: 0.12 },
+      IV:  { I: 0.32, V: 0.34, ii: 0.18, vi: 0.16 },
+      V:   { I: 0.46, vi: 0.28, IV: 0.14 },
+      vi:  { IV: 0.34, V: 0.28, ii: 0.22, I: 0.16 },
+      'vii°': { I: 0.3, V: 0.18 },
+    };
+    const PROG_MINOR = {
+      i:   { i: 0.12, iv: 0.32, V: 0.4, VI: 0.3, III: 0.18, VII: 0.16 },
+      'ii°': { V: 0.36, i: 0.14 },
+      III: { VI: 0.24, iv: 0.18, i: 0.12 },
+      iv:  { i: 0.3, V: 0.34, VII: 0.14 },
+      v:   { i: 0.28, VI: 0.16 },
+      V:   { i: 0.48, VI: 0.22 },
+      VI:  { III: 0.2, iv: 0.26, V: 0.24, i: 0.14 },
+      VII: { III: 0.22, i: 0.2, V: 0.16 },
+    };
     const QUALITY_INTERVALS = { maj: [0, 4, 7], min: [0, 3, 7], dim: [0, 3, 6] };
     const QUALITY_SUFFIX = { maj: '', min: 'm', dim: 'dim' };
+    const GRACE_MS = 85;
 
-    const melodyHistory = []; // { pc, t }
-    let detectedKey = { tonic: 0, mode: 'major', label: 'C major' };
+    const melodyHistory = []; // { pc, t, dur }
+    const pendingMelody = new Map(); // midi -> { token, started }
+    let melodyToken = 0;
+    let detectedKey = { tonic: 0, mode: 'major', label: 'C major', locked: false };
     let currentChord = null;
     let lastChordChangeAt = 0;
     let accompIdleTimer = 0;
-    const chordPad = { voices: [], label: null };
+    const chordPad = { voices: [], label: null, midis: [], style: null };
+
+    (function populateKeyLock() {
+      const optAuto = document.createElement('option');
+      optAuto.value = 'auto';
+      optAuto.textContent = 'Auto detect';
+      keyLockEl.appendChild(optAuto);
+      for (const mode of ['major', 'minor']) {
+        for (let t = 0; t < 12; t++) {
+          const opt = document.createElement('option');
+          opt.value = `${t}:${mode}`;
+          opt.textContent = `${noteNames[t]} ${mode}`;
+          keyLockEl.appendChild(opt);
+        }
+      }
+    })();
 
     function triadPcs(rootPc, quality) {
       return QUALITY_INTERVALS[quality].map((i) => (rootPc + i) % 12);
@@ -667,14 +733,24 @@
       return sum;
     }
 
+    function keyFromLock() {
+      const v = keyLockEl.value;
+      if (!v || v === 'auto') return null;
+      const [t, mode] = v.split(':');
+      const tonic = parseInt(t, 10);
+      return { tonic, mode, label: `${noteNames[tonic]} ${mode}`, locked: true };
+    }
+
     function detectKey(history) {
+      const locked = keyFromLock();
+      if (locked) return locked;
+
       const hist = new Array(12).fill(0);
       const now = performance.now();
       for (const n of history) {
-        // Recent notes weigh more.
         const age = Math.max(0, now - n.t);
-        const w = Math.exp(-age / 3500);
-        hist[n.pc] += w;
+        const durBoost = 0.65 + Math.min(1.8, (n.dur || 180) / 260);
+        hist[n.pc] += Math.exp(-age / 3500) * durBoost;
       }
       let best = { tonic: 0, mode: 'major', score: -Infinity };
       for (let tonic = 0; tonic < 12; tonic++) {
@@ -683,8 +759,7 @@
         if (maj > best.score) best = { tonic, mode: 'major', score: maj };
         if (min > best.score) best = { tonic, mode: 'minor', score: min };
       }
-      best.label = `${noteNames[best.tonic]} ${best.mode}`;
-      return best;
+      return { tonic: best.tonic, mode: best.mode, label: `${noteNames[best.tonic]} ${best.mode}`, locked: false };
     }
 
     function chordLabel(rootPc, quality, roman) {
@@ -700,41 +775,80 @@
 
     function chooseChord(key, melodyPc, prev) {
       const degrees = key.mode === 'major' ? MAJOR_DEGREES : MINOR_DEGREES;
+      const prog = key.mode === 'major' ? PROG_MAJOR : PROG_MINOR;
       const candidates = [];
       for (const d of degrees) {
         const root = (key.tonic + d.deg) % 12;
         const chord = chordLabel(root, d.q, d.roman);
         const contains = chord.pcs.includes(melodyPc);
         let score = d.w;
-        if (contains) score += 1.15;
-        else score -= 0.85; // strongly prefer chords under the melody note
-        if (chord.pcs[0] === melodyPc) score += 0.2; // melody on root
-        if (prev && prev.label === chord.label) score += 0.35; // hysteresis
-        // Slight preference for staying on I near phrase starts / tonic melody.
-        if (d.roman === 'I' || d.roman === 'i') score += 0.05;
+        if (contains) score += 1.05;
+        else score -= 0.9;
+        if (chord.pcs[0] === melodyPc) score += 0.18;
+        if (chord.pcs[2] === melodyPc) score += 0.08; // fifth in melody
+        if (prev && prev.label === chord.label) score += 0.28;
+        if (prev && prog[prev.roman] && prog[prev.roman][chord.roman] != null) {
+          score += prog[prev.roman][chord.roman];
+        }
+        if (d.roman === 'I' || d.roman === 'i') score += 0.04;
         candidates.push({ chord, score, contains });
       }
       candidates.sort((a, b) => b.score - a.score);
-      const bestFit = candidates.find((c) => c.contains) || candidates[0];
-      return bestFit.chord;
+      return (candidates.find((c) => c.contains) || candidates[0]).chord;
+    }
+
+    function voiceLeadMidis(chord, prevMidis) {
+      let root = 48 + chord.rootPc;
+      while (root > 55) root -= 12;
+      while (root < 47) root += 12;
+      const ideal = QUALITY_INTERVALS[chord.quality].map((iv, idx) => {
+        let m = root + iv;
+        if (idx > 0 && m > root + 8) m -= 12;
+        return m;
+      });
+
+      let upper;
+      if (!prevMidis || prevMidis.length === 0) {
+        upper = ideal;
+      } else {
+        const prevUpper = prevMidis.filter((m) => m >= 45);
+        upper = ideal.map((m) => {
+          let best = m;
+          let bestDist = Infinity;
+          for (const cand of [m - 12, m, m + 12]) {
+            if (cand < 42 || cand > 65) continue;
+            const dist = Math.min(...prevUpper.map((p) => Math.abs(p - cand)));
+            if (dist < bestDist) {
+              bestDist = dist;
+              best = cand;
+            }
+          }
+          return best;
+        });
+      }
+      upper = [...new Set(upper)].sort((a, b) => a - b);
+      const bass = upper[0] - 12;
+      return [...upper, bass];
     }
 
     function updateChordReadout(key, chord) {
+      const lockTag = key?.locked ? ' · locked' : '';
       if (!chord) {
         chordNameEl.textContent = '—';
         chordMetaEl.textContent = key
-          ? `Key: ${key.label} · listening…`
+          ? `Key: ${key.label}${lockTag} · listening…`
           : 'Play a melody to detect key & chords';
         return;
       }
       chordNameEl.textContent = `${chord.name}  (${chord.roman})`;
-      chordMetaEl.textContent = `Key: ${key.label}`;
+      chordMetaEl.textContent = `Key: ${key.label}${lockTag}`;
     }
 
     function stopChordPad(releaseSec = 0.4) {
       if (!audioCtx || chordPad.voices.length === 0) {
         chordPad.voices = [];
         chordPad.label = null;
+        chordPad.style = null;
         return;
       }
       const now = audioCtx.currentTime;
@@ -743,81 +857,115 @@
           v.gain.gain.cancelScheduledValues(now);
           v.gain.gain.setValueAtTime(Math.max(0.0001, v.gain.gain.value), now);
           v.gain.gain.exponentialRampToValueAtTime(0.0001, now + releaseSec);
-          v.osc.stop(now + releaseSec + 0.03);
+          for (const osc of v.oscillators) osc.stop(now + releaseSec + 0.03);
         } catch (_) {}
         setTimeout(() => {
-          try { v.osc.disconnect(); } catch (_) {}
-          try { v.gain.disconnect(); } catch (_) {}
-          try { v.filter.disconnect(); } catch (_) {}
+          for (const node of v.nodes) {
+            try { node.disconnect(); } catch (_) {}
+          }
         }, (releaseSec + 0.05) * 1000);
       }
       chordPad.voices = [];
       chordPad.label = null;
+      chordPad.style = null;
     }
 
-    function startChordPad(chord) {
-      getCtx();
-      if (chordPad.label === chord.label) return;
-      stopChordPad(0.22);
+    function createPadVoice(midi, now, level, reedStyle) {
+      const gain = audioCtx.createGain();
+      const filter = audioCtx.createBiquadFilter();
+      const oscillators = [];
+      const nodes = [filter, gain];
 
-      const now = audioCtx.currentTime;
-      // Close voicing around C3–G3 so it sits under the melody.
-      const rootMidi = 48 + chord.rootPc; // C3 + pc
-      const intervals = QUALITY_INTERVALS[chord.quality];
-      const midis = intervals.map((iv, idx) => {
-        let m = rootMidi + iv;
-        if (idx > 0 && m - rootMidi > 7) m -= 12;
-        while (m > 58) m -= 12;
-        while (m < 43) m += 12;
-        return m;
-      });
-      // Add a soft doubled root an octave down for body.
-      midis.push(midis[0] - 12);
-
-      const voices = [];
-      for (let i = 0; i < midis.length; i++) {
-        const midi = midis[i];
+      if (reedStyle) {
+        ensureBellows();
+        const waveTable = getHarmoniumWave();
+        const osc1 = audioCtx.createOscillator();
+        const osc2 = audioCtx.createOscillator();
+        osc1.setPeriodicWave(waveTable);
+        osc2.setPeriodicWave(waveTable);
+        osc1.frequency.setValueAtTime(midiToFreq(midi), now);
+        osc2.frequency.setValueAtTime(midiToFreq(midi) * 1.004, now);
+        const mix = audioCtx.createGain();
+        mix.gain.value = 0.7;
+        filter.type = 'bandpass';
+        filter.frequency.setValueAtTime(Math.min(2200, midiToFreq(midi) * 2.8), now);
+        filter.Q.setValueAtTime(0.9, now);
+        const trem = audioCtx.createGain();
+        trem.gain.value = 1;
+        osc1.connect(mix);
+        osc2.connect(mix);
+        mix.connect(filter);
+        filter.connect(trem);
+        trem.connect(gain);
+        bellowsDepth.connect(trem.gain);
+        osc1.start(now);
+        osc2.start(now);
+        oscillators.push(osc1, osc2);
+        nodes.push(osc1, osc2, mix, trem);
+      } else {
         const osc = audioCtx.createOscillator();
-        const filter = audioCtx.createBiquadFilter();
-        const gain = audioCtx.createGain();
-        osc.type = 'sine';
+        osc.type = 'triangle';
         osc.frequency.setValueAtTime(midiToFreq(midi), now);
         filter.type = 'lowpass';
-        filter.frequency.setValueAtTime(1400, now);
+        filter.frequency.setValueAtTime(1600, now);
         filter.Q.setValueAtTime(0.3, now);
-        const level = (i === midis.length - 1 ? 0.045 : 0.07) * (autoChordsEl.checked ? 1 : 0);
-        gain.gain.setValueAtTime(0.0001, now);
-        gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, level), now + 0.05);
         osc.connect(filter);
         filter.connect(gain);
-        gain.connect(masterGain);
         osc.start(now);
-        voices.push({ osc, filter, gain });
+        oscillators.push(osc);
+        nodes.push(osc);
       }
-      chordPad.voices = voices;
-      chordPad.label = chord.label;
+
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, level), now + 0.06);
+      gain.connect(masterGain);
+      return { oscillators, nodes, gain };
     }
 
-    function onMelodyNote(midi) {
+    function startChordPad(chord, force = false) {
+      getCtx();
+      const reedStyle = wave.value === 'harmonium';
+      if (!force && chordPad.label === chord.label && chordPad.style === reedStyle) return;
+      const prevMidis = chordPad.midis.slice();
+      stopChordPad(0.2);
+
+      const now = audioCtx.currentTime;
+      const midis = voiceLeadMidis(chord, prevMidis);
+      const accomp = parseFloat(accompLevelEl.value);
+      const voices = midis.map((midi, i) => {
+        const isBass = i === midis.length - 1;
+        const base = isBass ? 0.05 : 0.078;
+        const level = base * accomp * (reedStyle ? 0.85 : 1);
+        return createPadVoice(midi, now, level, reedStyle);
+      });
+
+      chordPad.voices = voices;
+      chordPad.label = chord.label;
+      chordPad.midis = midis;
+      chordPad.style = reedStyle;
+    }
+
+    function onMelodyNote(midi, durMs = 180) {
       if (!autoChordsEl.checked) return;
 
       const now = performance.now();
-      melodyHistory.push({ pc: ((midi % 12) + 12) % 12, t: now });
+      melodyHistory.push({
+        pc: ((midi % 12) + 12) % 12,
+        t: now,
+        dur: Math.max(GRACE_MS, durMs),
+      });
       while (melodyHistory.length && now - melodyHistory[0].t > 10000) melodyHistory.shift();
-      // Keep history bounded even for dense playing.
       if (melodyHistory.length > 64) melodyHistory.splice(0, melodyHistory.length - 64);
 
       detectedKey = detectKey(melodyHistory);
       const melodyPc = ((midi % 12) + 12) % 12;
       let next = chooseChord(detectedKey, melodyPc, currentChord);
 
-      // Avoid frantic chord flipping on ornaments: keep previous if it still
-      // supports the melody and we changed very recently.
       if (
         currentChord &&
         currentChord.pcs.includes(melodyPc) &&
         next.label !== currentChord.label &&
-        now - lastChordChangeAt < 420
+        now - lastChordChangeAt < 480
       ) {
         next = currentChord;
       }
@@ -834,20 +982,74 @@
 
       clearTimeout(accompIdleTimer);
       accompIdleTimer = setTimeout(() => {
-        stopChordPad(0.6);
+        stopChordPad(0.65);
+        chordPad.midis = [];
         updateChordReadout(detectedKey, null);
-      }, 2800);
+      }, 3000);
+    }
+
+    function queueMelodyHarmony(midi) {
+      if (!autoChordsEl.checked) return;
+      const token = ++melodyToken;
+      const started = performance.now();
+      pendingMelody.set(midi, { token, started });
+      setTimeout(() => {
+        const p = pendingMelody.get(midi);
+        if (!p || p.token !== token) return; // grace note released early
+        const dur = performance.now() - p.started;
+        onMelodyNote(midi, dur);
+      }, GRACE_MS);
+    }
+
+    function cancelMelodyHarmony(midi) {
+      pendingMelody.delete(midi);
     }
 
     autoChordsEl.addEventListener('change', () => {
       if (!autoChordsEl.checked) {
         clearTimeout(accompIdleTimer);
+        pendingMelody.clear();
         stopChordPad(0.3);
+        chordPad.midis = [];
         currentChord = null;
         updateChordReadout(detectedKey, null);
         chordMetaEl.textContent = 'Auto chords off';
       } else {
         chordMetaEl.textContent = 'Play a melody to detect key & chords';
+      }
+    });
+
+    keyLockEl.addEventListener('change', () => {
+      detectedKey = detectKey(melodyHistory);
+      updateChordReadout(detectedKey, currentChord);
+      if (currentChord && autoChordsEl.checked) {
+        // Re-pick under locked/unlocked key using last melody pc if available.
+        const last = melodyHistory[melodyHistory.length - 1];
+        if (last) {
+          currentChord = chooseChord(detectedKey, last.pc, currentChord);
+          lastChordChangeAt = performance.now();
+          startChordPad(currentChord, true);
+          updateChordReadout(detectedKey, currentChord);
+        }
+      }
+    });
+
+    accompLevelEl.addEventListener('input', () => {
+      if (!audioCtx || !chordPad.voices.length) return;
+      const accomp = parseFloat(accompLevelEl.value);
+      const now = audioCtx.currentTime;
+      chordPad.voices.forEach((v, i) => {
+        const isBass = i === chordPad.voices.length - 1;
+        const base = isBass ? 0.05 : 0.078;
+        const level = base * accomp * (chordPad.style === true ? 0.85 : 1);
+        v.gain.gain.cancelScheduledValues(now);
+        v.gain.gain.setTargetAtTime(Math.max(0.0001, level), now, 0.03);
+      });
+    });
+
+    wave.addEventListener('change', () => {
+      if (currentChord && autoChordsEl.checked && chordPad.label) {
+        startChordPad(currentChord, true);
       }
     });
 
@@ -923,12 +1125,17 @@
       highlightKey(midi, true);
       voiceOn(midi, 1);
       addToRecording('on', midi);
-      onMelodyNote(midi);
+      queueMelodyHarmony(midi);
     }
 
     function releaseMidi(midi) {
       syncHighlight(midi);
       if (midiStillHeld(midi)) return;
+      // Drop grace notes before they can flip the harmony.
+      const pending = pendingMelody.get(midi);
+      if (pending && performance.now() - pending.started < GRACE_MS) {
+        cancelMelodyHarmony(midi);
+      }
       voiceOff(midi);
       addToRecording('off', midi);
     }
@@ -1087,10 +1294,14 @@
           if (ev.type === 'on') {
             voiceOn(ev.midi, 1, when);
             queueHighlight(ev.midi, true, when);
-            onMelodyNote(ev.midi);
+            queueMelodyHarmony(ev.midi);
           } else {
             voiceOff(ev.midi, when, { ignoreSustain: true });
             queueHighlight(ev.midi, false, when);
+            const pending = pendingMelody.get(ev.midi);
+            if (pending && performance.now() - pending.started < GRACE_MS) {
+              cancelMelodyHarmony(ev.midi);
+            }
           }
           index++;
         }
