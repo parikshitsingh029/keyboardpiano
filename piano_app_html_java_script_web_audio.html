@@ -83,20 +83,20 @@
         linear-gradient(165deg, var(--bg0), var(--bg1) 55%, var(--bg2));
       display: grid;
       place-items: stretch;
-      padding: 10px;
+      padding: 6px;
       -webkit-font-smoothing: antialiased;
       text-rendering: optimizeLegibility;
     }
     .app {
-      width: min(1280px, 100%);
+      width: min(1440px, 100%);
       margin: 0 auto;
-      min-height: calc(100vh - 20px);
+      min-height: calc(100vh - 12px);
       display: flex;
       flex-direction: column;
       background:
         linear-gradient(180deg, rgba(58, 56, 51, 0.96), rgba(42, 41, 38, 0.98));
       border: 1px solid var(--line);
-      border-radius: 16px;
+      border-radius: 14px;
       box-shadow: var(--shadow);
       overflow: hidden;
     }
@@ -104,15 +104,15 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 12px;
-      padding: 12px 16px;
+      gap: 10px;
+      padding: 8px 12px;
       border-bottom: 1px solid var(--line);
       background: linear-gradient(90deg, rgba(196,160,106,.06), transparent 50%);
     }
     .brand { min-width: 0; }
     .brand-mark {
       font-family: "Source Serif 4", Georgia, serif;
-      font-size: clamp(28px, 4vw, 40px);
+      font-size: clamp(22px, 3.2vw, 32px);
       line-height: 1;
       margin: 0;
       letter-spacing: 0.04em;
@@ -133,18 +133,18 @@
     .controls {
       display: grid;
       grid-template-columns: 2fr repeat(5, minmax(0, 1fr));
-      gap: 8px;
-      padding: 10px 16px;
+      gap: 6px;
+      padding: 6px 12px;
       border-bottom: 1px solid var(--line);
     }
     .control {
       background: var(--panel);
       border: 1px solid var(--line);
-      border-radius: 10px;
-      padding: 8px 10px;
+      border-radius: 8px;
+      padding: 6px 8px;
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: 4px;
       min-width: 0;
     }
     .control-instrument { grid-column: span 1; }
@@ -173,8 +173,8 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 10px;
-      padding: 8px 16px;
+      gap: 8px;
+      padding: 5px 12px;
       border-bottom: 1px solid var(--line);
       flex-wrap: wrap;
       background: rgba(0,0,0,.06);
@@ -214,7 +214,7 @@
     }
     .chord-readout .chord-name, .scale-readout .scale-name {
       font-family: "Source Serif 4", Georgia, serif;
-      font-size: 20px;
+      font-size: 17px;
       font-weight: 700;
       letter-spacing: 0.02em;
       color: var(--text);
@@ -256,7 +256,7 @@
     }
     .bpm-readout .bpm-value {
       font-family: "Source Serif 4", Georgia, serif;
-      font-size: 24px;
+      font-size: 20px;
       font-weight: 700;
       color: var(--accent);
       font-variant-numeric: tabular-nums;
@@ -277,7 +277,7 @@
     }
 
     .staff-wrap {
-      padding: 8px 16px 10px;
+      padding: 5px 12px 6px;
       border-bottom: 1px solid var(--line);
       background: rgba(0,0,0,.05);
     }
@@ -351,36 +351,49 @@
     .staff-panel svg {
       display: block;
       width: 100%;
-      height: 118px;
+      height: 96px;
     }
-    .staff-panel.chord svg { height: 118px; }
+    .staff-panel.chord svg { height: 96px; }
     .staff-legend {
       display: flex;
       flex-wrap: wrap;
-      gap: 8px 14px;
-      margin-top: 4px;
-      font-size: 11px;
+      gap: 6px 12px;
+      margin-top: 2px;
+      font-size: 10px;
       color: var(--muted);
     }
     .staff-legend strong { font-weight: 700; }
 
     .bhajan-helper {
-      padding: 10px 16px 12px;
+      padding: 0;
       border-bottom: 1px solid var(--line);
       background: rgba(0,0,0,.04);
     }
-    .bhajan-head {
+    .bhajan-helper > summary {
+      list-style: none;
+      cursor: pointer;
       display: flex;
       align-items: baseline;
       justify-content: space-between;
       gap: 10px;
       flex-wrap: wrap;
-      margin-bottom: 8px;
+      padding: 6px 12px;
+      user-select: none;
     }
+    .bhajan-helper > summary::-webkit-details-marker { display: none; }
+    .bhajan-helper > summary::before {
+      content: "▸";
+      color: var(--accent);
+      margin-right: 6px;
+      font-size: 12px;
+    }
+    .bhajan-helper[open] > summary::before { content: "▾"; }
+    .bhajan-body { padding: 0 12px 8px; }
     .bhajan-head h2 {
       margin: 0;
+      display: inline;
       font-family: "Source Serif 4", Georgia, serif;
-      font-size: 18px;
+      font-size: 15px;
       font-weight: 700;
       color: var(--text);
     }
@@ -450,10 +463,10 @@
     .bhajan-suggest .sug-title { font-weight: 650; }
     .bhajan-suggest .sug-meta { color: var(--muted); font-size: 11px; margin-top: 2px; }
     .bhajan-results {
-      margin-top: 8px;
+      margin-top: 6px;
       display: grid;
-      gap: 6px;
-      max-height: 180px;
+      gap: 5px;
+      max-height: 132px;
       overflow: auto;
     }
     .bhajan-card {
@@ -516,13 +529,118 @@
     .piano-wrap {
       position: relative;
       flex: 1 1 auto;
-      min-height: 240px;
-      padding: 10px 14px 12px;
+      min-height: 220px;
+      padding: 6px 10px 8px;
+      display: grid;
+      grid-template-columns: 88px minmax(0, 1fr);
+      gap: 8px;
+      align-items: stretch;
+    }
+    .pitch-panel {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 6px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--panel);
+      min-width: 0;
+    }
+    .pitch-panel .pitch-title {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--muted);
+    }
+    .pitch-wheel-box {
+      position: relative;
+      width: 42px;
+      height: 132px;
+      display: grid;
+      place-items: center;
+      border-radius: 21px;
+      background: linear-gradient(180deg, #4a463f, #2e2c28);
+      border: 1px solid var(--line);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.04);
+    }
+    .pitch-wheel-box::before {
+      content: "";
+      position: absolute;
+      left: 6px; right: 6px;
+      top: 50%;
+      height: 1px;
+      background: rgba(196,160,106,.45);
+      pointer-events: none;
+    }
+    #pitchWheel {
+      -webkit-appearance: slider-vertical;
+      appearance: slider-vertical;
+      writing-mode: vertical-lr;
+      direction: rtl;
+      width: 28px;
+      height: 118px;
+      padding: 0;
+      margin: 0;
+      background: transparent;
+      cursor: pointer;
+    }
+    #pitchWheel::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 22px;
+      height: 14px;
+      border-radius: 4px;
+      background: var(--accent);
+      border: 1px solid rgba(0,0,0,.25);
+    }
+    @supports not (appearance: slider-vertical) {
+      .pitch-wheel-box { overflow: hidden; }
+      #pitchWheel {
+        writing-mode: horizontal-tb;
+        direction: ltr;
+        width: 118px;
+        height: 28px;
+        transform: rotate(-90deg);
+      }
+    }
+    .pitch-slider-wrap {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      align-items: stretch;
+    }
+    .pitch-slider-wrap label {
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      text-align: center;
+    }
+    #pitchSlider { width: 100%; }
+    #pitchRange {
+      width: 100%;
+      padding: 5px 4px;
+      font-size: 11px;
+    }
+    .pitch-readout {
+      font-family: "Source Serif 4", Georgia, serif;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--accent2);
+      font-variant-numeric: tabular-nums;
+      min-height: 1.2em;
+    }
+    .pitch-hint {
+      font-size: 9px;
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.25;
     }
     .piano {
       position: relative;
       height: 100%;
-      min-height: 260px;
+      min-height: 240px;
       user-select: none;
       -webkit-user-select: none;
       touch-action: none;
@@ -593,11 +711,11 @@
     }
 
     footer {
-      padding: 8px 16px 10px;
+      padding: 5px 12px 7px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 10px;
+      gap: 8px;
       border-top: 1px solid var(--line);
       flex-wrap: wrap;
     }
@@ -646,8 +764,13 @@
       .bpm-readout { margin-left: 0; text-align: left; width: 100%; }
       .credit { text-align: left; }
       .staff-panels { grid-template-columns: 1fr; }
-      .staff-panel svg, .staff-panel.chord svg { height: 110px; }
-      .piano-wrap { min-height: 220px; }
+      .staff-panel svg, .staff-panel.chord svg { height: 90px; }
+      .piano-wrap {
+        grid-template-columns: 72px minmax(0, 1fr);
+        min-height: 200px;
+      }
+      .pitch-wheel-box { height: 110px; }
+      #pitchWheel { height: 96px; }
     }
     @media (prefers-reduced-motion: reduce) {
       .brand-mark, .brand-sub, .piano { animation: none; }
@@ -854,41 +977,43 @@
       </div>
     </section>
 
-    <section class="bhajan-helper" aria-label="Bhajan helper database">
-      <div class="bhajan-head">
+    <details class="bhajan-helper" aria-label="Bhajan helper database">
+      <summary class="bhajan-head">
         <h2>Bhajan helper</h2>
-        <span class="muted">Top 300 Hindu bhajans · lookup scale (major/minor) &amp; taal · autosuggest search</span>
+        <span class="muted">Top 300 · search / filters · tap to expand</span>
+      </summary>
+      <div class="bhajan-body">
+        <div class="bhajan-filters">
+          <div class="bhajan-field search">
+            <label for="bhajanSearch">Search</label>
+            <input id="bhajanSearch" type="search" placeholder="Type a bhajan name…" autocomplete="off" />
+            <div class="bhajan-suggest" id="bhajanSuggest" role="listbox" aria-label="Bhajan suggestions"></div>
+          </div>
+          <div class="bhajan-field">
+            <label for="bhajanDeity">Deity / theme</label>
+            <select id="bhajanDeity"></select>
+          </div>
+          <div class="bhajan-field">
+            <label for="bhajanMode">Scale</label>
+            <select id="bhajanMode">
+              <option value="all" selected>Major &amp; minor</option>
+              <option value="major">Major only</option>
+              <option value="minor">Minor only</option>
+            </select>
+          </div>
+          <div class="bhajan-field">
+            <label for="bhajanKey">Key</label>
+            <select id="bhajanKey"></select>
+          </div>
+          <div class="bhajan-field">
+            <label for="bhajanTaal">Taal</label>
+            <select id="bhajanTaal"></select>
+          </div>
+        </div>
+        <div class="bhajan-results" id="bhajanResults"></div>
+        <div class="bhajan-status" id="bhajanStatus">Loading bhajan database…</div>
       </div>
-      <div class="bhajan-filters">
-        <div class="bhajan-field search">
-          <label for="bhajanSearch">Search</label>
-          <input id="bhajanSearch" type="search" placeholder="Type a bhajan name…" autocomplete="off" />
-          <div class="bhajan-suggest" id="bhajanSuggest" role="listbox" aria-label="Bhajan suggestions"></div>
-        </div>
-        <div class="bhajan-field">
-          <label for="bhajanDeity">Deity / theme</label>
-          <select id="bhajanDeity"></select>
-        </div>
-        <div class="bhajan-field">
-          <label for="bhajanMode">Scale</label>
-          <select id="bhajanMode">
-            <option value="all" selected>Major &amp; minor</option>
-            <option value="major">Major only</option>
-            <option value="minor">Minor only</option>
-          </select>
-        </div>
-        <div class="bhajan-field">
-          <label for="bhajanKey">Key</label>
-          <select id="bhajanKey"></select>
-        </div>
-        <div class="bhajan-field">
-          <label for="bhajanTaal">Taal</label>
-          <select id="bhajanTaal"></select>
-        </div>
-      </div>
-      <div class="bhajan-results" id="bhajanResults"></div>
-      <div class="bhajan-status" id="bhajanStatus">Loading bhajan database…</div>
-    </section>
+    </details>
 
     <section class="staff-wrap" aria-label="Live staff notation">
       <div class="staff-head">
@@ -902,10 +1027,10 @@
       </div>
       <div class="staff-panels">
         <div class="staff-panel" data-label="Melody">
-          <svg id="melodyStaff" viewBox="0 0 640 118" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Melody staff"></svg>
+          <svg id="melodyStaff" viewBox="0 0 640 96" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Melody staff"></svg>
         </div>
         <div class="staff-panel chord" data-label="Chord">
-          <svg id="chordStaff" viewBox="0 0 420 118" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Chord staff"></svg>
+          <svg id="chordStaff" viewBox="0 0 420 96" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Chord staff"></svg>
         </div>
       </div>
       <div class="staff-legend" id="staffLegend">
@@ -915,6 +1040,23 @@
     </section>
 
     <section class="piano-wrap">
+      <aside class="pitch-panel" aria-label="Pitch bend">
+        <div class="pitch-title">Pitch</div>
+        <div class="pitch-wheel-box" title="Pitch wheel — springs back to center">
+          <input id="pitchWheel" type="range" min="-1" max="1" step="0.01" value="0" aria-label="Pitch bend wheel" />
+        </div>
+        <div class="pitch-slider-wrap">
+          <label for="pitchSlider">Hold</label>
+          <input id="pitchSlider" type="range" min="-1" max="1" step="0.01" value="0" aria-label="Pitch bend slider" />
+        </div>
+        <select id="pitchRange" aria-label="Pitch bend range" title="Bend range">
+          <option value="2" selected>±2 st</option>
+          <option value="7">±7 st</option>
+          <option value="12">±12 st</option>
+        </select>
+        <div class="pitch-readout" id="pitchReadout">0.00 st</div>
+        <div class="pitch-hint">Wheel springs<br>Slider holds</div>
+      </aside>
       <div id="piano" class="piano">
         <div class="white-keys" id="whiteKeys" style="--white-count:14"></div>
         <div class="black-keys" id="blackKeys"></div>
@@ -922,7 +1064,7 @@
     </section>
 
     <footer>
-      <div class="kbd-help">Keyboard: <code>z x c v b n m , q w e r t y</code> (white) · pick <strong>Key / scale</strong> to play any major/minor on white keys</div>
+      <div class="kbd-help">Keys <code>z x c v b n m , q w e r t y</code> · pitch wheel/slider · <strong>Key / scale</strong> for major/minor on white keys</div>
       <div class="credit"><strong>P2A3S2V</strong> version 2026.8<br>Created by Parikshit Kumar Singh and all family members</div>
     </footer>
   </div>
@@ -975,6 +1117,10 @@
     const bpmMetaEl = document.getElementById('bpmMeta');
     const mixProfileEl = document.getElementById('mixProfile');
     const eyeModeEl = document.getElementById('eyeMode');
+    const pitchWheelEl = document.getElementById('pitchWheel');
+    const pitchSliderEl = document.getElementById('pitchSlider');
+    const pitchRangeEl = document.getElementById('pitchRange');
+    const pitchReadoutEl = document.getElementById('pitchReadout');
     const bhajanSearchEl = document.getElementById('bhajanSearch');
     const bhajanSuggestEl = document.getElementById('bhajanSuggest');
     const bhajanDeityEl = document.getElementById('bhajanDeity');
@@ -1038,6 +1184,9 @@
     let audioCtx = null;
     let masterGain = null;
     let mixBus = null;
+    let bendSource = null; // ConstantSource → oscillator.detune (cents)
+    let pitchNorm = 0; // -1..1
+    let pitchRangeSemis = 2;
     let harmoniumWave = null;
     let advancedHarmoniumWave = null;
     let stringWave = null;
@@ -1433,11 +1582,60 @@
       }
     }
 
+    function ensureBendSource() {
+      getCtx();
+      if (bendSource) return bendSource;
+      bendSource = audioCtx.createConstantSource();
+      bendSource.offset.value = pitchNorm * pitchRangeSemis * 100;
+      bendSource.start();
+      return bendSource;
+    }
+
+    function connectPitchBend(osc) {
+      if (!osc || !osc.detune) return;
+      try { ensureBendSource().connect(osc.detune); } catch (_) {}
+    }
+
+    function applyPitchBendAudio() {
+      if (!audioCtx || !bendSource) return;
+      const cents = pitchNorm * pitchRangeSemis * 100;
+      bendSource.offset.setTargetAtTime(cents, audioCtx.currentTime, 0.015);
+    }
+
+    function setPitchBend(norm, { from = '' } = {}) {
+      pitchNorm = Math.max(-1, Math.min(1, norm));
+      if (Math.abs(pitchNorm) < 0.008) pitchNorm = 0;
+      // Wheel is spring-return; slider holds. Don't force-sync them both ways.
+      if (from === 'slider' || from === 'spring' || from === 'range') {
+        if (pitchWheelEl) pitchWheelEl.value = '0';
+      }
+      if (from === 'slider' || from === 'range' || from === '') {
+        if (pitchSliderEl) pitchSliderEl.value = String(pitchNorm);
+      }
+      if (from === '' ) {
+        if (pitchWheelEl) pitchWheelEl.value = '0';
+      }
+      const semis = pitchNorm * pitchRangeSemis;
+      if (pitchReadoutEl) {
+        const sign = semis > 0 ? '+' : '';
+        pitchReadoutEl.textContent = `${sign}${semis.toFixed(2)} st`;
+      }
+      if (audioCtx) {
+        ensureBendSource();
+        applyPitchBendAudio();
+      }
+    }
+
     function disposeVoice(v) {
       if (v.dead) return;
       v.dead = true;
       liveVoices.delete(v);
       if (currentVoice.get(v.midi) === v) currentVoice.delete(v.midi);
+      if (bendSource) {
+        for (const osc of v.oscillators) {
+          try { bendSource.disconnect(osc.detune); } catch (_) {}
+        }
+      }
       for (const node of v.nodes) {
         try { node.disconnect(); } catch (_) {}
       }
@@ -2806,6 +3004,7 @@
         pedaled: false,
         dead: false,
       };
+      for (const osc of built.oscillators) connectPitchBend(osc);
       liveVoices.add(v);
       currentVoice.set(midi, v);
       pushStaffMelody(midi);
@@ -3402,7 +3601,7 @@
       const topY = 24;
       const padL = 8;
       const padR = width - 8;
-      const viewH = 118;
+      const viewH = 96;
       const tr = transport || staffTransport();
 
       const theme = staffTheme();
@@ -4788,7 +4987,7 @@
     }, true);
 
     // Extra guard: ignore letter/digit typeahead on our dropdowns for piano keys.
-    for (const el of [wave, octaveSel, keyLockEl, accompSoundEl, taalSelectEl, percSelectEl, mixProfileEl, eyeModeEl, bhajanDeityEl, bhajanModeEl, bhajanKeyEl, bhajanTaalEl]) {
+    for (const el of [wave, octaveSel, keyLockEl, accompSoundEl, taalSelectEl, percSelectEl, mixProfileEl, eyeModeEl, pitchRangeEl, bhajanDeityEl, bhajanModeEl, bhajanKeyEl, bhajanTaalEl]) {
       el.addEventListener('keydown', (e) => {
         if (KEY_CODES.includes(e.code)) {
           e.preventDefault();
@@ -4796,6 +4995,35 @@
         }
       });
     }
+
+    // Pitch wheel (spring-return) + hold slider
+    pitchRangeSemis = parseFloat(pitchRangeEl.value) || 2;
+    setPitchBend(0, { from: 'range' });
+    pitchWheelEl.addEventListener('input', () => {
+      getCtx();
+      pitchNorm = Math.max(-1, Math.min(1, parseFloat(pitchWheelEl.value) || 0));
+      if (Math.abs(pitchNorm) < 0.008) pitchNorm = 0;
+      const semis = pitchNorm * pitchRangeSemis;
+      pitchReadoutEl.textContent = `${semis > 0 ? '+' : ''}${semis.toFixed(2)} st`;
+      ensureBendSource();
+      applyPitchBendAudio();
+    });
+    const springPitchWheel = () => {
+      // Return to held slider value (not always zero).
+      setPitchBend(parseFloat(pitchSliderEl.value) || 0, { from: 'spring' });
+    };
+    pitchWheelEl.addEventListener('pointerup', springPitchWheel);
+    pitchWheelEl.addEventListener('pointercancel', springPitchWheel);
+    pitchWheelEl.addEventListener('blur', springPitchWheel);
+    pitchSliderEl.addEventListener('input', () => {
+      getCtx();
+      setPitchBend(parseFloat(pitchSliderEl.value) || 0, { from: 'slider' });
+    });
+    pitchRangeEl.addEventListener('change', () => {
+      pitchRangeSemis = parseFloat(pitchRangeEl.value) || 2;
+      setPitchBend(parseFloat(pitchSliderEl.value) || 0, { from: 'range' });
+    });
+    pitchSliderEl.addEventListener('dblclick', () => setPitchBend(0, { from: 'slider' }));
 
     function applyEyeMode(mode) {
       const next = mode === 'focus' ? 'focus' : 'comfort';
