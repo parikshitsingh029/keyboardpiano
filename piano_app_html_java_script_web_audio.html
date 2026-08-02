@@ -8,33 +8,84 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;650;700&family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&display=swap" rel="stylesheet" />
   <style>
-    :root {
-      --bg0: #14100c;
-      --bg1: #1c1712;
-      --panel: rgba(36, 28, 22, 0.88);
-      --line: rgba(232, 196, 140, 0.18);
-      --text: #f4ebe0;
-      --muted: #b7a894;
-      --accent: #e0a35b;
-      --accent2: #6fbfa3;
-      --whiteKeyEdge: #d7cfc3;
-      --blackKey: #1a1613;
-      --blackKeyTop: #2c2620;
-      --success: #6fbfa3;
+    /* Comfort-first (default): mid contrast, warm low-blue, matte surfaces for long sessions. */
+    :root, [data-eyes="comfort"] {
+      --bg0: #2a2926;
+      --bg1: #32312d;
+      --bg2: #3a3833;
+      --panel: rgba(52, 50, 45, 0.92);
+      --line: rgba(180, 168, 148, 0.22);
+      --text: #e2dbd0;
+      --muted: #a39a8c;
+      --accent: #c4a06a;
+      --accent2: #7f9e8c;
+      --whiteKey: #e6e0d4;
+      --whiteKeyDeep: #d5cec0;
+      --whiteKeyEdge: #c2b9a8;
+      --whiteKeyText: #5c5348;
+      --whiteKeyActive: #ddd0b8;
+      --whiteKeyActiveDeep: #cbb896;
+      --blackKey: #3a3732;
+      --blackKeyTop: #4a463f;
+      --blackKeyText: #cfc6b6;
+      --blackKeyActive: #5a5348;
+      --success: #7f9e8c;
+      --staff-paper: #e4e0d6;
+      --staff-ink: #4a453c;
+      --staff-mute: #8a8274;
+      --control-face: #3d3a34;
+      --chip-face: #3a3731;
+      --glow: transparent;
+      --shadow: 0 10px 28px rgba(0,0,0,.22);
+      color-scheme: dark;
+    }
+    /* Focus: a bit brighter for well-lit rooms; still avoids pure white/black glare. */
+    [data-eyes="focus"] {
+      --bg0: #1f1e1b;
+      --bg1: #272622;
+      --bg2: #312f2a;
+      --panel: rgba(44, 42, 38, 0.94);
+      --line: rgba(200, 184, 156, 0.26);
+      --text: #efe8dc;
+      --muted: #b0a794;
+      --accent: #d4ae6e;
+      --accent2: #86b09a;
+      --whiteKey: #f0ebe1;
+      --whiteKeyDeep: #e2d9c8;
+      --whiteKeyEdge: #cfc5b2;
+      --whiteKeyText: #52483c;
+      --whiteKeyActive: #e8d5b0;
+      --whiteKeyActiveDeep: #d4bc90;
+      --blackKey: #2e2b27;
+      --blackKeyTop: #3f3b35;
+      --blackKeyText: #ddd3c2;
+      --blackKeyActive: #524a3e;
+      --success: #86b09a;
+      --staff-paper: #ebe6db;
+      --staff-ink: #3f3a32;
+      --staff-mute: #7d7568;
+      --control-face: #35322c;
+      --chip-face: #322f29;
+      --glow: rgba(134, 176, 154, 0.35);
+      --shadow: 0 14px 36px rgba(0,0,0,.32);
     }
     * { box-sizing: border-box; }
     html, body { height: 100%; }
     body {
       margin: 0;
       font-family: "Sora", sans-serif;
+      font-size: 14px;
+      line-height: 1.45;
       color: var(--text);
       background:
-        radial-gradient(1200px 500px at 10% -10%, rgba(224, 163, 91, 0.16), transparent 55%),
-        radial-gradient(900px 420px at 90% 0%, rgba(111, 191, 163, 0.12), transparent 50%),
-        linear-gradient(165deg, var(--bg0), var(--bg1) 55%, #120f0c);
+        radial-gradient(1000px 420px at 12% -8%, rgba(196, 160, 106, 0.07), transparent 55%),
+        radial-gradient(800px 360px at 88% 0%, rgba(127, 158, 140, 0.06), transparent 50%),
+        linear-gradient(165deg, var(--bg0), var(--bg1) 55%, var(--bg2));
       display: grid;
       place-items: stretch;
       padding: 10px;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
     }
     .app {
       width: min(1280px, 100%);
@@ -43,10 +94,10 @@
       display: flex;
       flex-direction: column;
       background:
-        linear-gradient(180deg, rgba(48, 38, 30, 0.95), rgba(28, 22, 18, 0.97));
+        linear-gradient(180deg, rgba(58, 56, 51, 0.96), rgba(42, 41, 38, 0.98));
       border: 1px solid var(--line);
       border-radius: 16px;
-      box-shadow: 0 18px 50px rgba(0,0,0,.45);
+      box-shadow: var(--shadow);
       overflow: hidden;
     }
     header {
@@ -56,7 +107,7 @@
       gap: 12px;
       padding: 12px 16px;
       border-bottom: 1px solid var(--line);
-      background: linear-gradient(90deg, rgba(224,163,91,.08), transparent 45%);
+      background: linear-gradient(90deg, rgba(196,160,106,.06), transparent 50%);
     }
     .brand { min-width: 0; }
     .brand-mark {
@@ -103,18 +154,18 @@
     .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
     select, button, input[type="checkbox"], input[type="range"] { accent-color: var(--accent); }
     select, button {
-      background: #2a221b;
+      background: var(--control-face);
       color: var(--text);
       border: 1px solid var(--line);
       border-radius: 8px;
-      padding: 7px 8px;
+      padding: 8px 9px;
       font: inherit;
       font-size: 12px;
       cursor: pointer;
       width: 100%;
     }
     button { width: auto; }
-    #wave { width: 100%; min-height: 34px; }
+    #wave { width: 100%; min-height: 36px; }
     button:disabled { opacity: .55; cursor: not-allowed; }
     .btn-outline { background: transparent; }
 
@@ -126,7 +177,7 @@
       padding: 8px 16px;
       border-bottom: 1px solid var(--line);
       flex-wrap: wrap;
-      background: rgba(0,0,0,.12);
+      background: rgba(0,0,0,.06);
     }
     .strip-left {
       display: flex;
@@ -184,13 +235,13 @@
       padding: 1px 5px;
       border-radius: 5px;
       border: 1px solid var(--line);
-      background: #241c16;
+      background: var(--chip-face);
       font-size: 10px;
       color: var(--muted);
       text-align: center;
     }
     .scale-notes span.on {
-      color: #1a1410;
+      color: #243028;
       background: var(--accent2);
       border-color: var(--accent2);
       font-weight: 700;
@@ -205,7 +256,7 @@
     }
     .bpm-readout .bpm-value {
       font-family: "Source Serif 4", Georgia, serif;
-      font-size: 26px;
+      font-size: 24px;
       font-weight: 700;
       color: var(--accent);
       font-variant-numeric: tabular-nums;
@@ -218,7 +269,7 @@
       gap: 5px;
       padding: 3px 8px;
       border: 1px solid var(--line);
-      background: #241c16;
+      background: var(--chip-face);
       border-radius: 999px;
       font-size: 11px;
       color: var(--text);
@@ -228,9 +279,7 @@
     .staff-wrap {
       padding: 8px 16px 10px;
       border-bottom: 1px solid var(--line);
-      background:
-        linear-gradient(180deg, rgba(255,250,242,.04), transparent 40%),
-        rgba(0,0,0,.14);
+      background: rgba(0,0,0,.05);
     }
     .staff-head {
       display: flex;
@@ -259,7 +308,7 @@
       padding: 2px 8px;
       border-radius: 999px;
       border: 1px solid var(--line);
-      background: #241c16;
+      background: var(--chip-face);
       font-size: 11px;
       color: var(--text);
       font-variant-numeric: tabular-nums;
@@ -282,10 +331,11 @@
       min-width: 0;
       border: 1px solid var(--line);
       border-radius: 10px;
-      background: #f7f1e6;
+      background: var(--staff-paper);
       padding: 4px 6px 2px;
       position: relative;
       overflow: hidden;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
     }
     .staff-panel::before {
       content: attr(data-label);
@@ -295,7 +345,7 @@
       font-size: 10px;
       letter-spacing: 0.06em;
       text-transform: uppercase;
-      color: #8a7a66;
+      color: var(--staff-mute);
       z-index: 1;
     }
     .staff-panel svg {
@@ -329,7 +379,8 @@
       touch-action: none;
       border-radius: 10px;
       overflow: hidden;
-      box-shadow: inset 0 0 0 1px rgba(255,255,255,.04);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.03);
+      background: var(--bg2);
       animation: stageRise 0.85s 0.08s ease-out both;
     }
 
@@ -343,23 +394,24 @@
       position: relative;
       border: 1px solid var(--whiteKeyEdge);
       border-bottom-width: 3px;
-      background: linear-gradient(#fffaf2, #efe4d4);
+      background: linear-gradient(var(--whiteKey), var(--whiteKeyDeep));
       border-radius: 0 0 8px 8px;
       margin: 0 -0.5px;
       display: flex;
       align-items: flex-end;
       justify-content: center;
       padding-bottom: 8px;
-      color: #4a3d30;
+      color: var(--whiteKeyText);
       font-size: 11px;
       letter-spacing: .2px;
       touch-action: none;
-      transition: transform .01s linear, background .05s ease;
+      transition: transform .01s linear, background .08s ease, filter .08s ease;
     }
     .white-key.active {
-      background: linear-gradient(#ffe7c2, #f0c48a);
+      background: linear-gradient(var(--whiteKeyActive), var(--whiteKeyActiveDeep));
       transform: translateY(1px);
       border-bottom-width: 2px;
+      filter: saturate(0.92);
     }
 
     .black-keys { position: absolute; inset: 0; pointer-events: none; }
@@ -371,22 +423,22 @@
       top: 0;
       transform: translateX(-50%);
       background: linear-gradient(180deg, var(--blackKeyTop), var(--blackKey));
-      border: 1px solid #3a322a;
+      border: 1px solid #524d44;
       border-bottom-width: 3px;
       border-radius: 0 0 7px 7px;
-      box-shadow: 0 6px 14px rgba(0,0,0,.5);
+      box-shadow: 0 4px 10px rgba(0,0,0,.28);
       display: flex;
       align-items: flex-end;
       justify-content: center;
       padding-bottom: 6px;
-      color: #e8d8c4;
+      color: var(--blackKeyText);
       font-size: 10px;
       pointer-events: auto;
       touch-action: none;
-      transition: transform .01s linear, background .05s ease;
+      transition: transform .01s linear, background .08s ease;
     }
     .black-key.active {
-      background: linear-gradient(180deg, #4a3b2c, #241c16);
+      background: linear-gradient(180deg, var(--blackKeyActive), var(--blackKey));
       transform: translate(-50%, 1px);
       border-bottom-width: 2px;
     }
@@ -409,7 +461,7 @@
       gap: 6px;
       padding: 4px 8px;
       border: 1px solid var(--line);
-      background: #241c16;
+      background: var(--chip-face);
       border-radius: 999px;
       font-size: 11px;
     }
@@ -418,21 +470,22 @@
       height: 8px;
       border-radius: 50%;
       background: var(--success);
-      box-shadow: 0 0 8px rgba(111,191,163,.7);
+      box-shadow: none;
     }
-    .dot.off { background: #7b869f; box-shadow: none; }
+    .dot.off { background: #7a766e; box-shadow: none; }
+    [data-eyes="focus"] .dot:not(.off) { box-shadow: 0 0 6px var(--glow); }
 
     @keyframes brandIn {
-      from { opacity: 0; letter-spacing: 0.18em; transform: translateY(6px); }
+      from { opacity: 0; letter-spacing: 0.12em; transform: translateY(4px); }
       to { opacity: 1; letter-spacing: 0.04em; transform: none; }
     }
     @keyframes fadeUp {
-      from { opacity: 0; transform: translateY(4px); }
+      from { opacity: 0; transform: translateY(3px); }
       to { opacity: 1; transform: none; }
     }
     @keyframes stageRise {
-      from { opacity: 0.55; transform: translateY(10px); filter: saturate(0.85); }
-      to { opacity: 1; transform: none; filter: none; }
+      from { opacity: 0.7; transform: translateY(6px); }
+      to { opacity: 1; transform: none; }
     }
 
     @media (max-width: 920px) {
@@ -452,7 +505,7 @@
     }
   </style>
 </head>
-<body>
+<body data-eyes="comfort">
   <div class="app">
     <header>
       <div class="brand">
@@ -460,6 +513,13 @@
         <p class="brand-sub">version 2026.8 · created by Parikshit Kumar Singh and all family members</p>
       </div>
       <div class="header-right">
+        <label class="accomp-field" for="eyeMode" title="Reduce glare for long practice sessions">
+          <span>Eyes</span>
+          <select id="eyeMode">
+            <option value="comfort" selected>Comfort</option>
+            <option value="focus">Focus</option>
+          </select>
+        </label>
         <label class="accomp-field" for="mixProfile" title="Master mix profile">
           <span>Mix</span>
           <select id="mixProfile">
@@ -728,6 +788,7 @@
     const bpmValueEl = document.getElementById('bpmValue');
     const bpmMetaEl = document.getElementById('bpmMeta');
     const mixProfileEl = document.getElementById('mixProfile');
+    const eyeModeEl = document.getElementById('eyeMode');
     const melodyStaffEl = document.getElementById('melodyStaff');
     const chordStaffEl = document.getElementById('chordStaff');
     const staffMetaEl = document.getElementById('staffMeta');
@@ -2795,27 +2856,43 @@
       return el;
     }
 
-    // Classroom / rainbow note colors (letter → fill).
+    // Soft classroom colors — saturated enough to learn, muted for long sessions.
     const NOTE_COLORS = {
-      C: '#e23d3d',
-      D: '#f08a24',
-      E: '#f0c419',
-      F: '#3cb86a',
-      G: '#2eb7c9',
-      A: '#3b82f6',
-      B: '#8b5cf6',
+      C: '#c46b6b',
+      D: '#d08a4a',
+      E: '#c9a94a',
+      F: '#6a9e78',
+      G: '#5a9eaa',
+      A: '#6a8fc4',
+      B: '#8f7ab8',
     };
     const NOTE_TEXT_ON = {
-      C: '#fff', D: '#fff', E: '#3a2a10', F: '#fff', G: '#083038', A: '#fff', B: '#fff',
+      C: '#f7f1ea', D: '#f7f1ea', E: '#3a3424', F: '#f4faf5', G: '#f2fbfc', A: '#f4f7fc', B: '#f7f4fc',
     };
 
+    function themeColor(name, fallback) {
+      const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      return v || fallback;
+    }
+
     function noteColor(letter) {
-      return NOTE_COLORS[letter] || '#2a221b';
+      return NOTE_COLORS[letter] || themeColor('--staff-ink', '#4a453c');
+    }
+
+    function staffTheme() {
+      return {
+        paper: themeColor('--staff-paper', '#e4e0d6'),
+        ink: themeColor('--staff-ink', '#4a453c'),
+        mute: themeColor('--staff-mute', '#8a8274'),
+        accent: themeColor('--accent', '#c4a06a'),
+        accent2: themeColor('--accent2', '#7f9e8c'),
+      };
     }
 
     function drawClef(svg, clef, x, topY, lineGap) {
+      const ink = staffTheme().ink;
       if (clef === 'bass') {
-        const g = svgEl('g', { fill: '#2a221b' });
+        const g = svgEl('g', { fill: ink });
         g.appendChild(svgEl('text', {
           x, y: topY + lineGap * 1.15,
           'font-family': 'Georgia, "Times New Roman", serif',
@@ -2825,7 +2902,7 @@
         svg.appendChild(g);
         return;
       }
-      const g = svgEl('g', { fill: '#2a221b' });
+      const g = svgEl('g', { fill: ink });
       g.appendChild(svgEl('text', {
         x: x - 2, y: topY + lineGap * 3.15,
         'font-family': 'Georgia, "Times New Roman", serif',
@@ -2836,11 +2913,12 @@
     }
 
     function drawStaffLines(svg, x0, x1, topY, lineGap) {
+      const ink = staffTheme().ink;
       for (let i = 0; i < 5; i++) {
         const y = topY + i * lineGap;
         svg.appendChild(svgEl('line', {
           x1: x0, x2: x1, y1: y, y2: y,
-          stroke: '#3a322a', 'stroke-width': 1.15,
+          stroke: ink, 'stroke-width': 1.05, opacity: 0.72,
         }));
       }
     }
@@ -2917,7 +2995,7 @@
         : 'Lines EGBDF · Spaces FACE';
       svg.appendChild(svgEl('text', {
         x: xLines - 2, y: topY + 4 * lineGap + 14,
-        fill: '#6a5a48',
+        fill: staffTheme().mute,
         'font-family': 'Sora, sans-serif',
         'font-size': 9,
         'font-weight': 650,
@@ -2943,7 +3021,7 @@
         const y = staffY({ letter, accidental: null, octave }, clef, topY, lineGap);
         svg.appendChild(svgEl('text', {
           x: cx, y: y + lineGap * 0.35,
-          fill: '#2a221b',
+          fill: staffTheme().ink,
           'font-family': 'Georgia, "Times New Roman", serif',
           'font-size': lineGap * 1.55,
           'font-weight': 700,
@@ -2954,19 +3032,18 @@
     }
 
     function drawLedgerLines(svg, x, y, topY, lineGap, noteRx) {
+      const ink = staffTheme().ink;
       const bottomY = topY + 4 * lineGap;
       const x1 = x - noteRx - 3;
       const x2 = x + noteRx + 3;
-      // Above staff
       for (let ly = topY - lineGap; ly >= y - 0.1; ly -= lineGap) {
         svg.appendChild(svgEl('line', {
-          x1, x2, y1: ly, y2: ly, stroke: '#3a322a', 'stroke-width': 1.1,
+          x1, x2, y1: ly, y2: ly, stroke: ink, 'stroke-width': 1.05, opacity: 0.7,
         }));
       }
-      // Below staff
       for (let ly = bottomY + lineGap; ly <= y + 0.1; ly += lineGap) {
         svg.appendChild(svgEl('line', {
-          x1, x2, y1: ly, y2: ly, stroke: '#3a322a', 'stroke-width': 1.1,
+          x1, x2, y1: ly, y2: ly, stroke: ink, 'stroke-width': 1.05, opacity: 0.7,
         }));
       }
     }
@@ -3045,10 +3122,11 @@
     }
 
     function drawTempoMark(svg, x, y, bpm) {
+      const theme = staffTheme();
       const text = `♩ = ${Math.round(bpm)}`;
       svg.appendChild(svgEl('text', {
         x, y,
-        fill: '#2a7a66',
+        fill: theme.accent2,
         'font-family': 'Source Serif 4, Georgia, serif',
         'font-size': 12,
         'font-weight': 700,
@@ -3056,10 +3134,11 @@
     }
 
     function drawTimeSignature(svg, x, topY, lineGap, meter) {
+      const ink = staffTheme().ink;
       const cx = x + 8;
       svg.appendChild(svgEl('text', {
         x: cx, y: topY + lineGap * 1.55,
-        fill: '#2a221b',
+        fill: ink,
         'font-family': 'Source Serif 4, Georgia, serif',
         'font-size': lineGap * 1.85,
         'font-weight': 700,
@@ -3067,7 +3146,7 @@
       }, String(meter.beats)));
       svg.appendChild(svgEl('text', {
         x: cx, y: topY + lineGap * 3.45,
-        fill: '#2a221b',
+        fill: ink,
         'font-family': 'Source Serif 4, Georgia, serif',
         'font-size': lineGap * 1.85,
         'font-weight': 700,
@@ -3079,39 +3158,40 @@
     function drawMeasureGrid(svg, {
       x0, x1, topY, lineGap, measuresShown, meter, transport, firstBarNumber,
     }) {
+      const theme = staffTheme();
       const bottomY = topY + 4 * lineGap;
       const width = x1 - x0;
       const beatsTotal = measuresShown * meter.beats;
-      // Beat lanes
       for (let b = 0; b <= beatsTotal; b++) {
         const x = x0 + (width * b) / beatsTotal;
         const isBar = b % meter.beats === 0;
         svg.appendChild(svgEl('line', {
           x1: x, x2: x, y1: topY - 2, y2: bottomY + 2,
-          stroke: isBar ? '#2a221b' : 'rgba(58,50,42,0.18)',
-          'stroke-width': isBar ? 1.6 : 1,
+          stroke: isBar ? theme.ink : theme.ink,
+          opacity: isBar ? 0.78 : 0.16,
+          'stroke-width': isBar ? 1.45 : 1,
         }));
         if (isBar) {
           const barNo = firstBarNumber + Math.floor(b / meter.beats);
           svg.appendChild(svgEl('text', {
             x: x + 3, y: topY - 5,
-            fill: '#8a7a66',
+            fill: theme.mute,
             'font-family': 'Sora, sans-serif',
             'font-size': 9,
             'font-weight': 700,
           }, String(barNo)));
         }
       }
-      // Playhead at the right edge ("now").
       svg.appendChild(svgEl('line', {
         x1: x1, x2: x1, y1: topY - 6, y2: bottomY + 8,
-        stroke: 'rgba(196,122,44,0.75)',
-        'stroke-width': 1.5,
+        stroke: theme.accent,
+        opacity: 0.65,
+        'stroke-width': 1.4,
         'stroke-dasharray': '3 2',
       }));
       svg.appendChild(svgEl('text', {
         x: x1 - 2, y: topY - 7,
-        fill: '#c47a2c',
+        fill: theme.accent,
         'font-family': 'Sora, sans-serif',
         'font-size': 9,
         'font-weight': 700,
@@ -3131,8 +3211,9 @@
       const viewH = 118;
       const tr = transport || staffTransport();
 
+      const theme = staffTheme();
       svg.appendChild(svgEl('rect', {
-        x: 0, y: 0, width, height: viewH, fill: '#f7f1e6',
+        x: 0, y: 0, width, height: viewH, fill: theme.paper,
       }));
 
       // Tempo above the staff.
@@ -3169,7 +3250,7 @@
       // Meter caption under tempo.
       svg.appendChild(svgEl('text', {
         x: padL + 88, y: 14,
-        fill: '#6a5a48',
+        fill: theme.mute,
         'font-family': 'Sora, sans-serif',
         'font-size': 10,
         'font-weight': 650,
@@ -3241,7 +3322,7 @@
         if (!drawMidis.length) {
           svg.appendChild(svgEl('text', {
             x, y: topY + 2 * lineGap + 4,
-            fill: '#8a7a66', 'font-size': 12, 'font-family': 'Sora, sans-serif',
+            fill: theme.mute, 'font-size': 12, 'font-family': 'Sora, sans-serif',
           }, '—'));
         } else {
           const ys = drawMidis.map((m) => {
@@ -3257,7 +3338,7 @@
         if (chordName) {
           svg.appendChild(svgEl('text', {
             x: 12, y: topY + 4 * lineGap + 14,
-            fill: '#6a5a48', 'font-size': 11, 'font-family': 'Source Serif 4, Georgia, serif',
+            fill: theme.mute, 'font-size': 11, 'font-family': 'Source Serif 4, Georgia, serif',
             'font-weight': 700,
           }, chordName));
         }
