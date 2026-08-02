@@ -225,10 +225,64 @@
       text-transform: capitalize;
     }
 
+    .staff-wrap {
+      padding: 8px 16px 10px;
+      border-bottom: 1px solid var(--line);
+      background:
+        linear-gradient(180deg, rgba(255,250,242,.04), transparent 40%),
+        rgba(0,0,0,.14);
+    }
+    .staff-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 6px;
+      flex-wrap: wrap;
+    }
+    .staff-title {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+    .staff-meta { font-size: 11px; color: var(--muted); }
+    .staff-panels {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: 10px;
+    }
+    .staff-panel {
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #f7f1e6;
+      padding: 4px 6px 2px;
+      position: relative;
+      overflow: hidden;
+    }
+    .staff-panel::before {
+      content: attr(data-label);
+      position: absolute;
+      top: 4px;
+      right: 8px;
+      font-size: 10px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #8a7a66;
+      z-index: 1;
+    }
+    .staff-panel svg {
+      display: block;
+      width: 100%;
+      height: 92px;
+    }
+    .staff-panel.chord svg { height: 92px; }
+
     .piano-wrap {
       position: relative;
       flex: 1 1 auto;
-      min-height: 280px;
+      min-height: 240px;
       padding: 10px 14px 12px;
     }
     .piano {
@@ -354,6 +408,9 @@
       .scale-notes { justify-content: flex-start; }
       .bpm-readout { margin-left: 0; text-align: left; width: 100%; }
       .credit { text-align: left; }
+      .staff-panels { grid-template-columns: 1fr; }
+      .staff-panel svg, .staff-panel.chord svg { height: 84px; }
+      .piano-wrap { min-height: 220px; }
     }
     @media (prefers-reduced-motion: reduce) {
       .brand-mark, .brand-sub, .piano { animation: none; }
@@ -553,6 +610,21 @@
       </div>
     </section>
 
+    <section class="staff-wrap" aria-label="Live staff notation">
+      <div class="staff-head">
+        <span class="staff-title">Live staff</span>
+        <span class="staff-meta" id="staffMeta">Play keys to see melody &amp; chord notation</span>
+      </div>
+      <div class="staff-panels">
+        <div class="staff-panel" data-label="Melody">
+          <svg id="melodyStaff" viewBox="0 0 640 92" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Melody staff"></svg>
+        </div>
+        <div class="staff-panel chord" data-label="Chord">
+          <svg id="chordStaff" viewBox="0 0 420 92" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Chord staff"></svg>
+        </div>
+      </div>
+    </section>
+
     <section class="piano-wrap">
       <div id="piano" class="piano">
         <div class="white-keys" id="whiteKeys" style="--white-count:14"></div>
@@ -612,6 +684,9 @@
     const bpmValueEl = document.getElementById('bpmValue');
     const bpmMetaEl = document.getElementById('bpmMeta');
     const mixProfileEl = document.getElementById('mixProfile');
+    const melodyStaffEl = document.getElementById('melodyStaff');
+    const chordStaffEl = document.getElementById('chordStaff');
+    const staffMetaEl = document.getElementById('staffMeta');
 
     // ---- Audio engine ----
     // Fast playing fix: releasing voices are NOT kept in currentVoice, and note-on
@@ -2430,6 +2505,8 @@
       };
       liveVoices.add(v);
       currentVoice.set(midi, v);
+      pushStaffMelody(midi);
+      scheduleStaffUpdate();
       return v;
     }
 
@@ -2439,9 +2516,11 @@
       if (!v || v.dead || v.releasing) return;
       if (!ignoreSustain && sustain.checked) {
         v.pedaled = true;
+        scheduleStaffUpdate();
         return;
       }
       releaseVoice(v, when);
+      scheduleStaffUpdate();
     }
 
     function midiStillHeld(midi) {
@@ -2462,6 +2541,7 @@
         }
         releaseVoice(v, null);
       }
+      scheduleStaffUpdate();
     }
 
     function silenceAll() {
@@ -2480,6 +2560,382 @@
       stopChordPad(0.05);
       stopKeyDrone(0.08);
       document.querySelectorAll('#piano .active').forEach((el) => el.classList.remove('active'));
+      scheduleStaffUpdate();
+    }
+
+    // ---- Live staff notation (SVG) ----
+    const STAFF_LETTER = { C: 0, D: 1, E: 2, F: 3, G: 4, A: 5, B: 6 };
+    const STAFF_SHARP_ORDER = ['F', 'C', 'G', 'D', 'A', 'E', 'B'];
+    const STAFF_FLAT_ORDER = ['B', 'E', 'A', 'D', 'G', 'C', 'F'];
+    const STAFF_MAJOR_SHARPS = { 0: 0, 7: 1, 2: 2, 9: 3, 4: 4, 11: 5, 6: 6, 1: 7 };
+    const STAFF_MAJOR_FLATS = { 0: 0, 5: 1, 10: 2, 3: 3, 8: 4, 1: 5, 6: 6, 11: 7 };
+    const staffMelodyTrail = []; // { midi, t }
+    let staffRaf = 0;
+
+    function keySignatureInfo(key) {
+      if (!key) return { count: 0, type: 'sharp', letters: new Set(), preferFlats: false };
+      const majorTonic = key.mode === 'minor' ? (key.tonic + 3) % 12 : key.tonic;
+      // Conventional major key signatures (enharmonics resolved).
+      const table = {
+        0: [0, 'sharp'],   // C
+        7: [1, 'sharp'],   // G
+        2: [2, 'sharp'],   // D
+        9: [3, 'sharp'],   // A
+        4: [4, 'sharp'],   // E
+        11: [5, 'sharp'],  // B
+        6: [6, 'sharp'],   // F#
+        1: [5, 'flat'],    // Db (not C#)
+        5: [1, 'flat'],    // F
+        10: [2, 'flat'],   // Bb
+        3: [3, 'flat'],    // Eb
+        8: [4, 'flat'],    // Ab
+      };
+      const [count, type] = table[majorTonic] || [0, 'sharp'];
+      const order = type === 'flat' ? STAFF_FLAT_ORDER : STAFF_SHARP_ORDER;
+      const letters = new Set(order.slice(0, count));
+      return { count, type, letters, preferFlats: type === 'flat' };
+    }
+
+    function spellMidiForStaff(midi, preferFlats) {
+      const pc = ((midi % 12) + 12) % 12;
+      const octave = Math.floor(midi / 12) - 1;
+      const sharp = [
+        ['C', null], ['C', '#'], ['D', null], ['D', '#'], ['E', null], ['F', null],
+        ['F', '#'], ['G', null], ['G', '#'], ['A', null], ['A', '#'], ['B', null],
+      ];
+      const flat = [
+        ['C', null], ['D', 'b'], ['D', null], ['E', 'b'], ['E', null], ['F', null],
+        ['G', 'b'], ['G', null], ['A', 'b'], ['A', null], ['B', 'b'], ['B', null],
+      ];
+      const [letter, accidental] = (preferFlats ? flat : sharp)[pc];
+      return { letter, accidental, octave, pc };
+    }
+
+    function diatonicIndex(letter, octave) {
+      return octave * 7 + STAFF_LETTER[letter];
+    }
+
+    function staffY(spell, clef, topY, lineGap) {
+      // Treble bottom line E4; bass bottom line G2.
+      const ref = clef === 'bass'
+        ? diatonicIndex('G', 2)
+        : diatonicIndex('E', 4);
+      const pos = diatonicIndex(spell.letter, spell.octave) - ref; // 0 = bottom line
+      const bottomY = topY + 4 * lineGap;
+      return bottomY - pos * (lineGap / 2);
+    }
+
+    function pushStaffMelody(midi) {
+      const t = performance.now();
+      staffMelodyTrail.push({ midi, t });
+      while (staffMelodyTrail.length > 32) staffMelodyTrail.shift();
+      // Drop very old trail notes.
+      while (staffMelodyTrail.length && t - staffMelodyTrail[0].t > 12000) staffMelodyTrail.shift();
+    }
+
+    function scheduleStaffUpdate() {
+      if (staffRaf) return;
+      staffRaf = requestAnimationFrame(() => {
+        staffRaf = 0;
+        renderStaffNotation();
+      });
+    }
+
+    function svgEl(name, attrs, text) {
+      const el = document.createElementNS('http://www.w3.org/2000/svg', name);
+      for (const [k, v] of Object.entries(attrs || {})) el.setAttribute(k, String(v));
+      if (text != null) el.textContent = text;
+      return el;
+    }
+
+    function drawClef(svg, clef, x, topY, lineGap) {
+      if (clef === 'bass') {
+        const g = svgEl('g', { fill: '#2a221b' });
+        g.appendChild(svgEl('text', {
+          x, y: topY + lineGap * 1.15,
+          'font-family': 'Georgia, "Times New Roman", serif',
+          'font-size': lineGap * 3.2,
+          'font-weight': 700,
+        }, '𝄢'));
+        svg.appendChild(g);
+        return;
+      }
+      const g = svgEl('g', { fill: '#2a221b' });
+      g.appendChild(svgEl('text', {
+        x: x - 2, y: topY + lineGap * 3.15,
+        'font-family': 'Georgia, "Times New Roman", serif',
+        'font-size': lineGap * 3.6,
+        'font-weight': 700,
+      }, '𝄞'));
+      svg.appendChild(g);
+    }
+
+    function drawStaffLines(svg, x0, x1, topY, lineGap) {
+      for (let i = 0; i < 5; i++) {
+        const y = topY + i * lineGap;
+        svg.appendChild(svgEl('line', {
+          x1: x0, x2: x1, y1: y, y2: y,
+          stroke: '#3a322a', 'stroke-width': 1.1,
+        }));
+      }
+    }
+
+    function drawKeySignature(svg, sig, clef, x, topY, lineGap) {
+      if (!sig.count) return x;
+      let cx = x;
+      const glyphs = sig.type === 'flat' ? STAFF_FLAT_ORDER : STAFF_SHARP_ORDER;
+      for (let i = 0; i < sig.count; i++) {
+        const letter = glyphs[i];
+        // Conventional staff octaves for key-signature marks.
+        let octave;
+        if (clef === 'bass') {
+          octave = (letter === 'B' || letter === 'A' || letter === 'G') ? 2 : 3;
+        } else {
+          octave = (letter === 'B') ? 4 : 5;
+          if (letter === 'E' || letter === 'A') octave = 5;
+          if (letter === 'D' || letter === 'C') octave = 5;
+          if (letter === 'F' || letter === 'G') octave = 5;
+        }
+        const y = staffY({ letter, accidental: null, octave }, clef, topY, lineGap);
+        svg.appendChild(svgEl('text', {
+          x: cx, y: y + lineGap * 0.35,
+          fill: '#2a221b',
+          'font-family': 'Georgia, "Times New Roman", serif',
+          'font-size': lineGap * 1.55,
+          'font-weight': 700,
+        }, sig.type === 'flat' ? '♭' : '♯'));
+        cx += 9;
+      }
+      return cx + 4;
+    }
+
+    function drawLedgerLines(svg, x, y, topY, lineGap, noteRx) {
+      const bottomY = topY + 4 * lineGap;
+      const x1 = x - noteRx - 3;
+      const x2 = x + noteRx + 3;
+      // Above staff
+      for (let ly = topY - lineGap; ly >= y - 0.1; ly -= lineGap) {
+        svg.appendChild(svgEl('line', {
+          x1, x2, y1: ly, y2: ly, stroke: '#3a322a', 'stroke-width': 1.1,
+        }));
+      }
+      // Below staff
+      for (let ly = bottomY + lineGap; ly <= y + 0.1; ly += lineGap) {
+        svg.appendChild(svgEl('line', {
+          x1, x2, y1: ly, y2: ly, stroke: '#3a322a', 'stroke-width': 1.1,
+        }));
+      }
+    }
+
+    function noteNeedsAccidental(spell, sig) {
+      const inSig = sig.letters.has(spell.letter);
+      if (!spell.accidental) {
+        // Natural: show natural if letter is altered by key signature.
+        return inSig ? '♮' : null;
+      }
+      if (spell.accidental === '#' && sig.type === 'sharp' && inSig) return null;
+      if (spell.accidental === 'b' && sig.type === 'flat' && inSig) return null;
+      return spell.accidental === '#' ? '♯' : '♭';
+    }
+
+    function drawNoteHead(svg, x, y, { live = false, ghost = false, topY, lineGap } = {}) {
+      const rx = 5.2;
+      const ry = 3.8;
+      drawLedgerLines(svg, x, y, topY, lineGap, rx);
+      const fill = live ? '#c47a2c' : (ghost ? 'rgba(42,34,27,0.28)' : '#2a221b');
+      const ellipse = svgEl('ellipse', {
+        cx: x, cy: y, rx, ry,
+        fill,
+        transform: `rotate(-18 ${x} ${y})`,
+      });
+      svg.appendChild(ellipse);
+      if (live) {
+        svg.appendChild(svgEl('ellipse', {
+          cx: x, cy: y, rx: rx + 3.5, ry: ry + 2.5,
+          fill: 'none',
+          stroke: 'rgba(196,122,44,0.45)',
+          'stroke-width': 1.4,
+          transform: `rotate(-18 ${x} ${y})`,
+        }));
+      }
+    }
+
+    function drawNote(svg, midi, x, sig, clef, topY, lineGap, opts) {
+      const spell = spellMidiForStaff(midi, sig.preferFlats);
+      const y = staffY(spell, clef, topY, lineGap);
+      const acc = noteNeedsAccidental(spell, sig);
+      if (acc) {
+        svg.appendChild(svgEl('text', {
+          x: x - 12, y: y + 4,
+          fill: opts.live ? '#c47a2c' : '#2a221b',
+          'font-family': 'Georgia, "Times New Roman", serif',
+          'font-size': 13,
+          'font-weight': 700,
+          opacity: opts.ghost ? 0.35 : 1,
+        }, acc));
+      }
+      drawNoteHead(svg, x, y, { ...opts, topY, lineGap });
+      return { spell, y };
+    }
+
+    function renderOneStaff(svg, {
+      width, midis, trail = [], sig, mode, chordName,
+    }) {
+      while (svg.firstChild) svg.removeChild(svg.firstChild);
+      const lineGap = 8;
+      const topY = 26;
+      const padL = 8;
+      const padR = width - 8;
+
+      svg.appendChild(svgEl('rect', {
+        x: 0, y: 0, width, height: 92, fill: '#f7f1e6',
+      }));
+
+      // For chord mode with mixed registers, prefer treble and lift low notes by octaves for readability.
+      let drawMidis = midis.slice().sort((a, b) => a - b);
+      let clef = 'treble';
+      if (mode === 'chord') {
+        const avg = drawMidis.length
+          ? drawMidis.reduce((s, m) => s + m, 0) / drawMidis.length
+          : 60;
+        clef = avg < 58 ? 'bass' : 'treble';
+        // Keep chord cluster on staff: normalize into a readable octave window.
+        if (drawMidis.length) {
+          while (drawMidis[0] < (clef === 'bass' ? 38 : 55)) {
+            drawMidis = drawMidis.map((m) => m + 12);
+          }
+          while (drawMidis[drawMidis.length - 1] > (clef === 'bass' ? 65 : 81)) {
+            drawMidis = drawMidis.map((m) => m - 12);
+          }
+        }
+      }
+
+      drawStaffLines(svg, padL, padR, topY, lineGap);
+      drawClef(svg, clef, padL + 4, topY, lineGap);
+      let cursor = drawKeySignature(svg, sig, clef, padL + 34, topY, lineGap);
+
+      if (mode === 'melody') {
+        const liveSet = new Set(midis);
+        const history = trail.filter((n) => !liveSet.has(n.midi)).slice(-14);
+        const slotStart = Math.max(cursor + 10, 70);
+        const liveX = width - 48;
+        const histRight = liveX - 28;
+        const span = Math.max(1, histRight - slotStart);
+        history.forEach((n, i) => {
+          const x = slotStart + (span * (i + 1)) / (history.length + 1);
+          const age = performance.now() - n.t;
+          drawNote(svg, n.midi, x, sig, 'treble', topY, lineGap, {
+            live: false,
+            ghost: age > 3500,
+          });
+        });
+        // Live column
+        svg.appendChild(svgEl('line', {
+          x1: liveX - 16, x2: liveX - 16, y1: topY - 8, y2: topY + 4 * lineGap + 8,
+          stroke: 'rgba(196,122,44,0.35)', 'stroke-width': 1, 'stroke-dasharray': '2 3',
+        }));
+        const live = midis.slice().sort((a, b) => a - b);
+        if (live.length === 0) {
+          svg.appendChild(svgEl('text', {
+            x: liveX - 4, y: topY + 2 * lineGap + 4,
+            fill: '#8a7a66', 'font-size': 11, 'font-family': 'Sora, sans-serif',
+          }, '—'));
+        } else {
+          // Stack simultaneous melody notes with slight x offsets if seconds apart in pitch.
+          live.forEach((midi, i) => {
+            const x = liveX + (i % 2) * 7;
+            drawNote(svg, midi, x, sig, 'treble', topY, lineGap, { live: true });
+          });
+        }
+      } else {
+        // Chord: stacked simultaneous noteheads + name.
+        const x = Math.max(cursor + 36, width * 0.42);
+        if (!drawMidis.length) {
+          svg.appendChild(svgEl('text', {
+            x, y: topY + 2 * lineGap + 4,
+            fill: '#8a7a66', 'font-size': 12, 'font-family': 'Sora, sans-serif',
+          }, '—'));
+        } else {
+          // Offset seconds horizontally when adjacent (standard notation).
+          const ys = drawMidis.map((m) => {
+            const spell = spellMidiForStaff(m, sig.preferFlats);
+            return { midi: m, y: staffY(spell, clef, topY, lineGap), spell };
+          });
+          ys.forEach((n, i) => {
+            let xOff = 0;
+            if (i > 0 && Math.abs(ys[i - 1].y - n.y) < lineGap * 0.55) xOff = 10;
+            drawNote(svg, n.midi, x + xOff, sig, clef, topY, lineGap, { live: true });
+          });
+        }
+        if (chordName) {
+          svg.appendChild(svgEl('text', {
+            x: 12, y: 14,
+            fill: '#6a5a48', 'font-size': 11, 'font-family': 'Source Serif 4, Georgia, serif',
+            'font-weight': 700,
+          }, chordName));
+        }
+      }
+    }
+
+    function chordDisplayMidis(chord) {
+      if (!chord) return [];
+      if (chordPad.midis && chordPad.midis.length) {
+        // Prefer unique pitch classes from the sounding pad, one note each.
+        const byPc = new Map();
+        for (const m of chordPad.midis) {
+          const pc = ((m % 12) + 12) % 12;
+          if (!byPc.has(pc) || m < byPc.get(pc)) byPc.set(pc, m);
+        }
+        // Keep chord tones in chord.pcs order when possible.
+        return chord.pcs.map((pc) => {
+          if (byPc.has(pc)) return byPc.get(pc);
+          let m = 60 + pc;
+          while (m < 55) m += 12;
+          while (m > 74) m -= 12;
+          return m;
+        });
+      }
+      return chord.pcs.map((pc) => {
+        let m = 60 + ((pc - 0 + 12) % 12);
+        while (m < 57) m += 12;
+        while (m > 76) m -= 12;
+        return m;
+      });
+    }
+
+    function renderStaffNotation() {
+      const key = detectedKey || keyFromLock() || { tonic: 0, mode: 'major' };
+      const sig = keySignatureInfo(key);
+      const liveMelody = [...currentVoice.keys()].filter((m) => {
+        const v = currentVoice.get(m);
+        return v && !v.dead && !v.releasing;
+      }).sort((a, b) => a - b);
+
+      renderOneStaff(melodyStaffEl, {
+        width: 640,
+        midis: liveMelody,
+        trail: staffMelodyTrail,
+        sig,
+        mode: 'melody',
+      });
+
+      const chord = currentChord;
+      const cMidis = autoChordsEl.checked ? chordDisplayMidis(chord) : [];
+      renderOneStaff(chordStaffEl, {
+        width: 420,
+        midis: cMidis,
+        sig,
+        mode: 'chord',
+        chordName: chord && autoChordsEl.checked ? `${chord.name} (${chord.roman})` : '',
+      });
+
+      if (liveMelody.length || (chord && autoChordsEl.checked)) {
+        const mel = liveMelody.map(midiToName).join(' · ') || '—';
+        const ch = chord && autoChordsEl.checked ? chord.name : '—';
+        staffMetaEl.textContent = `Melody ${mel}  ·  Chord ${ch}  ·  ${key.label || noteNames[key.tonic] + ' ' + key.mode}`;
+      } else {
+        staffMetaEl.textContent = 'Play keys to see melody & chord notation';
+      }
     }
 
     // ---- Melody → key/chord accompaniment ----
@@ -2726,10 +3182,12 @@
         chordMetaEl.textContent = key
           ? `Key: ${key.label}${lockTag} · listening…`
           : 'Play a melody to detect key & chords';
+        scheduleStaffUpdate();
         return;
       }
       chordNameEl.textContent = `${chord.name}  (${chord.roman})`;
       chordMetaEl.textContent = `Key: ${key.label}${lockTag}`;
+      scheduleStaffUpdate();
     }
 
     function stopChordPad(releaseSec = 0.4) {
@@ -2737,6 +3195,7 @@
         chordPad.voices = [];
         chordPad.label = null;
         chordPad.style = null;
+        scheduleStaffUpdate();
         return;
       }
       const now = audioCtx.currentTime;
@@ -2756,6 +3215,7 @@
       chordPad.voices = [];
       chordPad.label = null;
       chordPad.style = null;
+      scheduleStaffUpdate();
     }
 
     function accompStyle() {
@@ -2983,6 +3443,7 @@
       chordPad.label = identity;
       chordPad.midis = midis;
       chordPad.style = styleKey;
+      scheduleStaffUpdate();
     }
 
     function onMelodyNote(midi, durMs = 180) {
@@ -3801,6 +4262,7 @@
 
     buildKeyboard();
     syncTransportUI();
+    renderStaffNotation();
   </script>
 </body>
 </html>
