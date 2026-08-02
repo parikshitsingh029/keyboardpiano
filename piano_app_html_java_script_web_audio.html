@@ -4395,6 +4395,7 @@
     }
 
     rhythmEnabledEl.addEventListener('change', () => {
+      meterState.barOriginMs = performance.now();
       if (rhythmEnabledEl.checked) {
         getCtx();
         startRhythm();
@@ -4402,10 +4403,13 @@
         stopRhythm();
         updateBpmUi();
       }
+      scheduleStaffUpdate();
     });
     taalSelectEl.addEventListener('change', () => {
+      meterState.barOriginMs = performance.now();
       if (rhythmEnabledEl.checked) startRhythm();
       else updateBpmUi();
+      scheduleStaffUpdate();
     });
     percSelectEl.addEventListener('change', () => {
       if (rhythmEnabledEl.checked) startRhythm();
