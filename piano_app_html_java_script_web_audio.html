@@ -199,22 +199,55 @@
     .accomp-toggle input { width: 16px; height: 16px; }
     .accomp-field select { padding: 6px 8px; }
     .accomp-field input[type="range"] { width: 90px; }
-    .chord-readout {
+    .live-readouts {
       display: flex;
-      align-items: baseline;
-      gap: 10px;
-      min-height: 28px;
+      align-items: flex-start;
+      gap: 18px;
       margin-left: auto;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .chord-readout, .scale-readout {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
+      min-height: 28px;
       text-align: right;
     }
-    .chord-readout .chord-name {
+    .chord-readout .chord-name, .scale-readout .scale-name {
       font-size: 22px;
       font-weight: 650;
       letter-spacing: 0.4px;
       color: var(--text);
       font-variant-numeric: tabular-nums;
     }
-    .chord-readout .chord-meta { font-size: 12px; color: var(--muted); }
+    .scale-readout .scale-name { color: #9fd0ff; }
+    .chord-readout .chord-meta, .scale-readout .scale-meta { font-size: 12px; color: var(--muted); }
+    .scale-notes {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      justify-content: flex-end;
+      max-width: 280px;
+    }
+    .scale-notes span {
+      display: inline-block;
+      min-width: 1.6em;
+      padding: 2px 6px;
+      border-radius: 6px;
+      border: 1px solid #2a3557;
+      background: #111733;
+      font-size: 11px;
+      color: var(--muted);
+      text-align: center;
+    }
+    .scale-notes span.on {
+      color: #0b1020;
+      background: #9fd0ff;
+      border-color: #9fd0ff;
+      font-weight: 700;
+    }
 
     .rhythm {
       display: flex;
@@ -265,7 +298,9 @@
     @media (max-width: 820px) {
       .controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .control-instrument { grid-column: span 2; }
-      .chord-readout { margin-left: 0; text-align: left; width: 100%; }
+      .live-readouts { margin-left: 0; width: 100%; justify-content: flex-start; }
+      .chord-readout, .scale-readout { align-items: flex-start; text-align: left; }
+      .scale-notes { justify-content: flex-start; }
       .bpm-readout { margin-left: 0; text-align: left; width: 100%; }
     }
   </style>
@@ -376,9 +411,16 @@
           <input id="accompLevel" type="range" min="0" max="1" step="0.01" value="0.55" />
         </label>
       </div>
-      <div class="chord-readout" id="chordReadout">
-        <span class="chord-name" id="chordName">—</span>
-        <span class="chord-meta" id="chordMeta">Play a melody to detect key &amp; chords</span>
+      <div class="live-readouts">
+        <div class="scale-readout" id="scaleReadout">
+          <span class="scale-name" id="scaleName">—</span>
+          <span class="scale-meta" id="scaleMeta">Play a melody to detect scale</span>
+          <div class="scale-notes" id="scaleNotes"></div>
+        </div>
+        <div class="chord-readout" id="chordReadout">
+          <span class="chord-name" id="chordName">—</span>
+          <span class="chord-meta" id="chordMeta">Play a melody to detect key &amp; chords</span>
+        </div>
       </div>
     </section>
 
@@ -465,6 +507,9 @@
     const accompLevelEl = document.getElementById('accompLevel');
     const chordNameEl = document.getElementById('chordName');
     const chordMetaEl = document.getElementById('chordMeta');
+    const scaleNameEl = document.getElementById('scaleName');
+    const scaleMetaEl = document.getElementById('scaleMeta');
+    const scaleNotesEl = document.getElementById('scaleNotes');
     const rhythmEnabledEl = document.getElementById('rhythmEnabled');
     const taalSelectEl = document.getElementById('taalSelect');
     const percSelectEl = document.getElementById('percSelect');
@@ -1831,8 +1876,16 @@
     let detectedKey = { tonic: 0, mode: 'major', label: 'C major', locked: false };
     let currentChord = null;
     let lastChordChangeAt = 0;
+    let lastMelodyPc = null;
     let accompIdleTimer = 0;
     const chordPad = { voices: [], label: null, midis: [], style: null };
+    const SCALE_STEPS = {
+      major: [0, 2, 4, 5, 7, 9, 11],
+      minor: [0, 2, 3, 5, 7, 8, 10], // natural minor
+    };
+    const DEGREE_NAMES = ['1', '2', '3', '4', '5', '6', '7'];
+    const DEGREE_LABELS_MAJOR = ['tonic', '2nd', '3rd', '4th', '5th', '6th', '7th'];
+    const DEGREE_LABELS_MINOR = ['tonic', '2nd', '♭3rd', '4th', '5th', '♭6th', '♭7th'];
 
     (function populateKeyLock() {
       const optAuto = document.createElement('option');
@@ -1957,8 +2010,56 @@
       return [...upper, bass];
     }
 
+    function scaleNoteNames(key) {
+      const steps = SCALE_STEPS[key.mode] || SCALE_STEPS.major;
+      return steps.map((step, i) => ({
+        pc: (key.tonic + step) % 12,
+        name: noteNames[(key.tonic + step) % 12],
+        degree: DEGREE_NAMES[i],
+      }));
+    }
+
+    function scaleDegreeInfo(key, melodyPc) {
+      if (melodyPc == null) return null;
+      const steps = SCALE_STEPS[key.mode] || SCALE_STEPS.major;
+      const labels = key.mode === 'minor' ? DEGREE_LABELS_MINOR : DEGREE_LABELS_MAJOR;
+      for (let i = 0; i < steps.length; i++) {
+        if ((key.tonic + steps[i]) % 12 === melodyPc) {
+          return { inScale: true, degree: DEGREE_NAMES[i], label: labels[i], name: noteNames[melodyPc] };
+        }
+      }
+      return { inScale: false, degree: '•', label: 'outside', name: noteNames[melodyPc] };
+    }
+
+    function updateScaleReadout(key, melodyPc = lastMelodyPc) {
+      if (!key) {
+        scaleNameEl.textContent = '—';
+        scaleMetaEl.textContent = 'Play a melody to detect scale';
+        scaleNotesEl.innerHTML = '';
+        return;
+      }
+      const lockTag = key.locked ? ' · locked' : ' · live';
+      const nice = key.mode === 'major' ? `${noteNames[key.tonic]} major` : `${noteNames[key.tonic]} natural minor`;
+      scaleNameEl.textContent = nice;
+      const deg = scaleDegreeInfo(key, melodyPc);
+      if (deg) {
+        scaleMetaEl.textContent = deg.inScale
+          ? `Now: ${deg.name} (${deg.label})${lockTag}`
+          : `Now: ${deg.name} · chromatic${lockTag}`;
+      } else {
+        scaleMetaEl.textContent = `Listening${lockTag}`;
+      }
+
+      const notes = scaleNoteNames(key);
+      scaleNotesEl.innerHTML = notes.map((n) => {
+        const on = melodyPc != null && n.pc === melodyPc;
+        return `<span class="${on ? 'on' : ''}" title="Degree ${n.degree}">${n.name}</span>`;
+      }).join('');
+    }
+
     function updateChordReadout(key, chord) {
       const lockTag = key?.locked ? ' · locked' : '';
+      updateScaleReadout(key, lastMelodyPc);
       if (!chord) {
         chordNameEl.textContent = '—';
         chordMetaEl.textContent = key
@@ -2237,6 +2338,7 @@
 
       detectedKey = detectKey(melodyHistory);
       const melodyPc = ((midi % 12) + 12) % 12;
+      lastMelodyPc = melodyPc;
       let next = chooseChord(detectedKey, melodyPc, currentChord);
 
       if (
@@ -2302,6 +2404,7 @@
     keyLockEl.addEventListener('change', () => {
       detectedKey = detectKey(melodyHistory);
       updateChordReadout(detectedKey, currentChord);
+      updateScaleReadout(detectedKey, lastMelodyPc);
       if (currentChord && autoChordsEl.checked) {
         // Re-pick under locked/unlocked key using last melody pc if available.
         const last = melodyHistory[melodyHistory.length - 1];
@@ -2313,6 +2416,9 @@
         }
       }
     });
+
+    // Initial empty scale strip.
+    updateScaleReadout(null);
 
     accompLevelEl.addEventListener('input', () => {
       if (!audioCtx || !chordPad.voices.length) return;
@@ -2894,6 +3000,8 @@
           if (ev.type === 'on') {
             voiceOn(ev.midi, 1, when);
             queueHighlight(ev.midi, true, when);
+            observeOnsetForTempo();
+            if (rhythmEnabledEl.checked && !rhythmState.running) startRhythm();
             queueMelodyHarmony(ev.midi);
           } else {
             voiceOff(ev.midi, when, { ignoreSustain: true });
