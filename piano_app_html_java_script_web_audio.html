@@ -234,7 +234,7 @@
     }
     .staff-head {
       display: flex;
-      align-items: baseline;
+      align-items: center;
       justify-content: space-between;
       gap: 10px;
       margin-bottom: 6px;
@@ -246,7 +246,33 @@
       letter-spacing: 0.08em;
       color: var(--muted);
     }
-    .staff-meta { font-size: 11px; color: var(--muted); }
+    .staff-transport {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .meter-chip, .tempo-chip, .bar-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: #241c16;
+      font-size: 11px;
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+    }
+    .meter-chip {
+      font-family: "Source Serif 4", Georgia, serif;
+      font-weight: 700;
+      color: var(--accent);
+      min-width: 2.6em;
+      justify-content: center;
+    }
+    .tempo-chip { color: var(--accent2); }
+    .staff-meta { font-size: 11px; color: var(--muted); margin-left: auto; }
     .staff-panels {
       display: grid;
       grid-template-columns: 1.4fr 1fr;
@@ -622,6 +648,11 @@
     <section class="staff-wrap" aria-label="Live staff notation">
       <div class="staff-head">
         <span class="staff-title">Live staff</span>
+        <div class="staff-transport" id="staffTransport">
+          <span class="meter-chip" id="staffMeterChip">4/4</span>
+          <span class="tempo-chip" id="staffTempoChip">♩ = —</span>
+          <span class="bar-chip" id="staffBarChip">Bar —</span>
+        </div>
         <span class="staff-meta" id="staffMeta">Play keys to see melody &amp; chord notation</span>
       </div>
       <div class="staff-panels">
@@ -701,6 +732,9 @@
     const chordStaffEl = document.getElementById('chordStaff');
     const staffMetaEl = document.getElementById('staffMeta');
     const staffLegendEl = document.getElementById('staffLegend');
+    const staffMeterChipEl = document.getElementById('staffMeterChip');
+    const staffTempoChipEl = document.getElementById('staffTempoChip');
+    const staffBarChipEl = document.getElementById('staffBarChip');
 
     // ---- Audio engine ----
     // Fast playing fix: releasing voices are NOT kept in currentVoice, and note-on
@@ -2583,8 +2617,103 @@
     const STAFF_FLAT_ORDER = ['B', 'E', 'A', 'D', 'G', 'C', 'F'];
     const STAFF_MAJOR_SHARPS = { 0: 0, 7: 1, 2: 2, 9: 3, 4: 4, 11: 5, 6: 6, 1: 7 };
     const STAFF_MAJOR_FLATS = { 0: 0, 5: 1, 10: 2, 3: 3, 8: 4, 1: 5, 6: 6, 11: 7 };
+    // Taal matras → Western meter shown on the staff.
+    const TAAL_METER = {
+      keherwa:     { beats: 4, beatUnit: 4, label: '4/4', source: 'Keherwa' },
+      bhajani:     { beats: 4, beatUnit: 4, label: '4/4', source: 'Bhajani' },
+      dadra:       { beats: 6, beatUnit: 8, label: '6/8', source: 'Dadra' },
+      rupak:       { beats: 7, beatUnit: 8, label: '7/8', source: 'Rupak' },
+      jhaptaal:    { beats: 5, beatUnit: 4, label: '5/4', source: 'Jhaptaal' },
+      ektaal:      { beats: 12, beatUnit: 8, label: '12/8', source: 'Ektaal' },
+      deepchandi:  { beats: 7, beatUnit: 4, label: '7/4', source: 'Deepchandi' },
+      teentaal:    { beats: 4, beatUnit: 4, label: '4/4', source: 'Teentaal' },
+    };
     const staffMelodyTrail = []; // { midi, t }
     let staffRaf = 0;
+    let staffClockTimer = 0;
+    const meterState = {
+      detected: { beats: 4, beatUnit: 4, label: '4/4', source: 'Auto' },
+      barOriginMs: performance.now(),
+    };
+
+    function ensureStaffClock() {
+      if (staffClockTimer) return;
+      staffClockTimer = setInterval(() => scheduleStaffUpdate(), 120);
+    }
+
+    function detectMeterFromOnsets() {
+      const onsets = (typeof tempoState !== 'undefined' && tempoState.onsets) ? tempoState.onsets : [];
+      if (onsets.length < 8) return meterState.detected;
+      const iois = [];
+      for (let i = 1; i < onsets.length; i++) {
+        const d = onsets[i] - onsets[i - 1];
+        if (d >= 110 && d <= 1200) iois.push(d);
+      }
+      if (iois.length < 5) return meterState.detected;
+      const sorted = iois.slice().sort((a, b) => a - b);
+      const median = sorted[Math.floor(sorted.length / 2)];
+      // Group strong beats by looking for gaps ~2–4× median (bar feel).
+      const candidates = [
+        { beats: 4, beatUnit: 4, label: '4/4', score: 0 },
+        { beats: 3, beatUnit: 4, label: '3/4', score: 0 },
+        { beats: 6, beatUnit: 8, label: '6/8', score: 0 },
+        { beats: 2, beatUnit: 4, label: '2/4', score: 0 },
+      ];
+      for (const c of candidates) {
+        const unit = c.beatUnit === 8 ? median : median;
+        const measure = unit * c.beats * (c.beatUnit === 8 ? 0.5 : 1);
+        // Score how often long IOIs align near measure boundaries.
+        let hits = 0;
+        for (const d of iois) {
+          const rem = Math.abs((d / measure) - Math.round(d / measure));
+          if (rem < 0.12) hits++;
+          // Prefer 4/4 slightly when ambiguous.
+          if (c.label === '4/4') hits += 0.15;
+        }
+        c.score = hits;
+      }
+      candidates.sort((a, b) => b.score - a.score);
+      const best = candidates[0];
+      meterState.detected = { beats: best.beats, beatUnit: best.beatUnit, label: best.label, source: 'Auto' };
+      return meterState.detected;
+    }
+
+    function currentMeter() {
+      // Prefer taal meter when rhythm is enabled; otherwise live-detect.
+      if (typeof rhythmEnabledEl !== 'undefined' && rhythmEnabledEl.checked) {
+        const id = taalSelectEl.value;
+        return TAAL_METER[id] || TAAL_METER.keherwa;
+      }
+      return detectMeterFromOnsets();
+    }
+
+    function staffTransport() {
+      const bpm = (typeof tempoState !== 'undefined' && (tempoState.displayBpm || tempoState.bpm)) || 90;
+      const meter = currentMeter();
+      const quarterMs = 60000 / Math.max(40, bpm);
+      const unitMs = (4 / meter.beatUnit) * quarterMs;
+      const measureMs = meter.beats * unitMs;
+      const now = performance.now();
+      // Keep a stable bar origin; nudge if we drift far.
+      if (!meterState.barOriginMs) meterState.barOriginMs = now;
+      let origin = meterState.barOriginMs;
+      // Align origin to nearest measure boundary behind "now" using rhythm beat if available.
+      if (typeof rhythmState !== 'undefined' && rhythmState.running && rhythmEnabledEl.checked) {
+        const taal = currentTaal();
+        const matraMs = quarterMs; // rhythm scheduler uses beat = quarter at bpm
+        const cycleMs = (taal.beats || meter.beats) * matraMs;
+        const beatIdx = rhythmState.beatIndex || 0;
+        // Approximate current position in cycle.
+        const posInCycle = ((beatIdx % (taal.beats || meter.beats)) * matraMs);
+        origin = now - posInCycle;
+        meterState.barOriginMs = origin;
+      }
+      const elapsed = Math.max(0, now - origin);
+      const measureIndex = Math.floor(elapsed / measureMs);
+      const measurePos = (elapsed % measureMs) / measureMs; // 0..1
+      const beatInMeasure = Math.floor(measurePos * meter.beats);
+      return { bpm, meter, quarterMs, unitMs, measureMs, now, measureIndex, measurePos, beatInMeasure, origin };
+    }
 
     function keySignatureInfo(key) {
       if (!key) return { count: 0, type: 'sharp', letters: new Set(), preferFlats: false };
@@ -2641,10 +2770,14 @@
 
     function pushStaffMelody(midi) {
       const t = performance.now();
+      // Start a new bar phrase after a rest.
+      if (!staffMelodyTrail.length || t - staffMelodyTrail[staffMelodyTrail.length - 1].t > 1800) {
+        meterState.barOriginMs = t;
+      }
       staffMelodyTrail.push({ midi, t });
-      while (staffMelodyTrail.length > 32) staffMelodyTrail.shift();
-      // Drop very old trail notes.
-      while (staffMelodyTrail.length && t - staffMelodyTrail[0].t > 12000) staffMelodyTrail.shift();
+      while (staffMelodyTrail.length > 48) staffMelodyTrail.shift();
+      while (staffMelodyTrail.length && t - staffMelodyTrail[0].t > 16000) staffMelodyTrail.shift();
+      ensureStaffClock();
     }
 
     function scheduleStaffUpdate() {
@@ -2911,19 +3044,99 @@
       return { spell, y, color };
     }
 
+    function drawTempoMark(svg, x, y, bpm) {
+      const text = `♩ = ${Math.round(bpm)}`;
+      svg.appendChild(svgEl('text', {
+        x, y,
+        fill: '#2a7a66',
+        'font-family': 'Source Serif 4, Georgia, serif',
+        'font-size': 12,
+        'font-weight': 700,
+      }, text));
+    }
+
+    function drawTimeSignature(svg, x, topY, lineGap, meter) {
+      const cx = x + 8;
+      svg.appendChild(svgEl('text', {
+        x: cx, y: topY + lineGap * 1.55,
+        fill: '#2a221b',
+        'font-family': 'Source Serif 4, Georgia, serif',
+        'font-size': lineGap * 1.85,
+        'font-weight': 700,
+        'text-anchor': 'middle',
+      }, String(meter.beats)));
+      svg.appendChild(svgEl('text', {
+        x: cx, y: topY + lineGap * 3.45,
+        fill: '#2a221b',
+        'font-family': 'Source Serif 4, Georgia, serif',
+        'font-size': lineGap * 1.85,
+        'font-weight': 700,
+        'text-anchor': 'middle',
+      }, String(meter.beatUnit)));
+      return x + 22;
+    }
+
+    function drawMeasureGrid(svg, {
+      x0, x1, topY, lineGap, measuresShown, meter, transport, firstBarNumber,
+    }) {
+      const bottomY = topY + 4 * lineGap;
+      const width = x1 - x0;
+      const beatsTotal = measuresShown * meter.beats;
+      // Beat lanes
+      for (let b = 0; b <= beatsTotal; b++) {
+        const x = x0 + (width * b) / beatsTotal;
+        const isBar = b % meter.beats === 0;
+        svg.appendChild(svgEl('line', {
+          x1: x, x2: x, y1: topY - 2, y2: bottomY + 2,
+          stroke: isBar ? '#2a221b' : 'rgba(58,50,42,0.18)',
+          'stroke-width': isBar ? 1.6 : 1,
+        }));
+        if (isBar) {
+          const barNo = firstBarNumber + Math.floor(b / meter.beats);
+          svg.appendChild(svgEl('text', {
+            x: x + 3, y: topY - 5,
+            fill: '#8a7a66',
+            'font-family': 'Sora, sans-serif',
+            'font-size': 9,
+            'font-weight': 700,
+          }, String(barNo)));
+        }
+      }
+      // Playhead at the right edge ("now").
+      svg.appendChild(svgEl('line', {
+        x1: x1, x2: x1, y1: topY - 6, y2: bottomY + 8,
+        stroke: 'rgba(196,122,44,0.75)',
+        'stroke-width': 1.5,
+        'stroke-dasharray': '3 2',
+      }));
+      svg.appendChild(svgEl('text', {
+        x: x1 - 2, y: topY - 7,
+        fill: '#c47a2c',
+        'font-family': 'Sora, sans-serif',
+        'font-size': 9,
+        'font-weight': 700,
+        'text-anchor': 'end',
+      }, 'NOW'));
+      return { beatsTotal, width };
+    }
+
     function renderOneStaff(svg, {
-      width, midis, trail = [], sig, mode, chordName,
+      width, midis, trail = [], sig, mode, chordName, transport,
     }) {
       while (svg.firstChild) svg.removeChild(svg.firstChild);
       const lineGap = 9;
-      const topY = 22;
+      const topY = 24;
       const padL = 8;
       const padR = width - 8;
       const viewH = 118;
+      const tr = transport || staffTransport();
 
       svg.appendChild(svgEl('rect', {
         x: 0, y: 0, width, height: viewH, fill: '#f7f1e6',
       }));
+
+      // Tempo above the staff.
+      drawTempoMark(svg, padL + 2, 14, tr.bpm);
 
       // For chord mode with mixed registers, prefer treble and lift low notes by octaves for readability.
       let drawMidis = midis.slice().sort((a, b) => a - b);
@@ -2933,7 +3146,6 @@
           ? drawMidis.reduce((s, m) => s + m, 0) / drawMidis.length
           : 60;
         clef = avg < 58 ? 'bass' : 'treble';
-        // Keep chord cluster on staff: normalize into a readable octave window.
         if (drawMidis.length) {
           while (drawMidis[0] < (clef === 'bass' ? 38 : 55)) {
             drawMidis = drawMidis.map((m) => m + 12);
@@ -2947,52 +3159,85 @@
       drawStaffLines(svg, padL, padR, topY, lineGap);
       drawClef(svg, clef, padL + 4, topY, lineGap);
       let cursor = drawKeySignature(svg, sig, clef, padL + 34, topY, lineGap);
+      cursor = drawTimeSignature(svg, cursor + 2, topY, lineGap, tr.meter);
 
       // Colorful FACE / EGBDF (or bass ACEG / GBDFA) guide column.
-      const guideX = Math.max(cursor + 4, 64);
+      const guideX = Math.max(cursor + 2, 78);
       drawStaffGuideLabels(svg, clef, topY, lineGap, guideX, guideX + 20);
       cursor = guideX + 42;
 
+      // Meter caption under tempo.
+      svg.appendChild(svgEl('text', {
+        x: padL + 88, y: 14,
+        fill: '#6a5a48',
+        'font-family': 'Sora, sans-serif',
+        'font-size': 10,
+        'font-weight': 650,
+      }, `${tr.meter.label} · ${tr.meter.source || 'Meter'}`));
+
       if (mode === 'melody') {
+        const measuresShown = 2;
+        const slotStart = Math.max(cursor + 6, 120);
+        const slotEnd = width - 14;
+        const firstBarNumber = Math.max(1, tr.measureIndex - measuresShown + 1);
+        drawMeasureGrid(svg, {
+          x0: slotStart,
+          x1: slotEnd,
+          topY,
+          lineGap,
+          measuresShown,
+          meter: tr.meter,
+          transport: tr,
+          firstBarNumber,
+        });
+
+        const windowMs = tr.measureMs * measuresShown;
+        const windowStart = tr.now - windowMs;
         const liveSet = new Set(midis);
-        const history = trail.filter((n) => !liveSet.has(n.midi)).slice(-12);
-        const slotStart = Math.max(cursor + 8, 110);
-        const liveX = width - 52;
-        const histRight = liveX - 30;
-        const span = Math.max(1, histRight - slotStart);
-        history.forEach((n, i) => {
-          const x = slotStart + (span * (i + 1)) / (history.length + 1);
-          const age = performance.now() - n.t;
+
+        // Place trail + live notes by absolute time into the measure window.
+        const timed = [];
+        for (const n of trail) {
+          if (n.t < windowStart - 50 || n.t > tr.now + 30) continue;
+          timed.push({ midi: n.midi, t: n.t, live: liveSet.has(n.midi) });
+        }
+        for (const midi of midis) {
+          if (!timed.some((n) => n.live && n.midi === midi)) {
+            timed.push({ midi, t: tr.now, live: true });
+          }
+        }
+        timed.sort((a, b) => a.t - b.t);
+
+        // Quantize display x to beat subdivisions for readability.
+        const beatsTotal = measuresShown * tr.meter.beats;
+        timed.forEach((n) => {
+          let rel = (n.t - windowStart) / windowMs;
+          rel = Math.max(0, Math.min(0.995, rel));
+          // Soft snap to 1/2 beat for cleaner bars.
+          const snap = Math.round(rel * beatsTotal * 2) / (beatsTotal * 2);
+          const x = slotStart + (slotEnd - slotStart) * snap;
+          const age = tr.now - n.t;
           drawNote(svg, n.midi, x, sig, 'treble', topY, lineGap, {
-            live: false,
-            ghost: age > 3500,
+            live: n.live,
+            ghost: !n.live && age > tr.measureMs,
           });
         });
-        // Live column
-        svg.appendChild(svgEl('line', {
-          x1: liveX - 18, x2: liveX - 18, y1: topY - 6, y2: topY + 4 * lineGap + 6,
-          stroke: 'rgba(196,122,44,0.4)', 'stroke-width': 1, 'stroke-dasharray': '2 3',
-        }));
-        svg.appendChild(svgEl('text', {
-          x: liveX + 2, y: topY - 8,
-          fill: '#8a7a66', 'font-size': 9, 'font-family': 'Sora, sans-serif', 'font-weight': 700,
-          'text-anchor': 'middle',
-        }, 'NOW'));
-        const live = midis.slice().sort((a, b) => a - b);
-        if (live.length === 0) {
-          svg.appendChild(svgEl('text', {
-            x: liveX - 2, y: topY + 2 * lineGap + 4,
-            fill: '#8a7a66', 'font-size': 11, 'font-family': 'Sora, sans-serif',
-          }, '—'));
-        } else {
-          live.forEach((midi, i) => {
-            const x = liveX + (i % 2) * 9;
-            drawNote(svg, midi, x, sig, 'treble', topY, lineGap, { live: true });
-          });
-        }
       } else {
-        // Chord: stacked simultaneous noteheads + name.
-        const x = Math.max(cursor + 28, width * 0.48);
+        // Chord: stacked simultaneous noteheads in the current bar slot.
+        const measuresShown = 1;
+        const slotStart = Math.max(cursor + 10, 120);
+        const slotEnd = width - 18;
+        drawMeasureGrid(svg, {
+          x0: slotStart,
+          x1: slotEnd,
+          topY,
+          lineGap,
+          measuresShown,
+          meter: tr.meter,
+          transport: tr,
+          firstBarNumber: Math.max(1, tr.measureIndex),
+        });
+        const x = slotStart + (slotEnd - slotStart) * Math.min(0.85, 0.15 + tr.measurePos * 0.7);
         if (!drawMidis.length) {
           svg.appendChild(svgEl('text', {
             x, y: topY + 2 * lineGap + 4,
@@ -3011,7 +3256,7 @@
         }
         if (chordName) {
           svg.appendChild(svgEl('text', {
-            x: 12, y: 14,
+            x: 12, y: topY + 4 * lineGap + 14,
             fill: '#6a5a48', 'font-size': 11, 'font-family': 'Source Serif 4, Georgia, serif',
             'font-weight': 700,
           }, chordName));
@@ -3048,6 +3293,9 @@
     function renderStaffNotation() {
       const key = detectedKey || keyFromLock() || { tonic: 0, mode: 'major' };
       const sig = keySignatureInfo(key);
+      const transport = staffTransport();
+      ensureStaffClock();
+
       const liveMelody = [...currentVoice.keys()].filter((m) => {
         const v = currentVoice.get(m);
         return v && !v.dead && !v.releasing;
@@ -3059,6 +3307,7 @@
         trail: staffMelodyTrail,
         sig,
         mode: 'melody',
+        transport,
       });
 
       const chord = currentChord;
@@ -3069,14 +3318,32 @@
         sig,
         mode: 'chord',
         chordName: chord && autoChordsEl.checked ? `${chord.name} (${chord.roman})` : '',
+        transport,
       });
+
+      if (staffMeterChipEl) staffMeterChipEl.textContent = transport.meter.label;
+      if (staffTempoChipEl) staffTempoChipEl.textContent = `♩ = ${Math.round(transport.bpm)}`;
+      if (staffBarChipEl) {
+        staffBarChipEl.textContent = `Bar ${Math.max(1, transport.measureIndex + 1)} · beat ${transport.beatInMeasure + 1}/${transport.meter.beats}`;
+      }
 
       if (liveMelody.length || (chord && autoChordsEl.checked)) {
         const mel = liveMelody.map(midiToName).join(' · ') || '—';
         const ch = chord && autoChordsEl.checked ? chord.name : '—';
-        staffMetaEl.textContent = `Melody ${mel}  ·  Chord ${ch}  ·  ${key.label || noteNames[key.tonic] + ' ' + key.mode}`;
+        staffMetaEl.textContent =
+          `${transport.meter.label} @ ${Math.round(transport.bpm)} BPM · Melody ${mel} · Chord ${ch}`;
       } else {
-        staffMetaEl.textContent = 'Play keys to see melody & chord notation';
+        staffMetaEl.textContent =
+          `${transport.meter.label} @ ${Math.round(transport.bpm)} BPM · ${transport.meter.source} meter · play to fill measures`;
+      }
+      if (staffLegendEl) {
+        const chip = (letter) =>
+          `<strong style="color:${noteColor(letter)};margin:0 1px">${letter}</strong>`;
+        staffLegendEl.innerHTML =
+          `Treble lines ${['E','G','B','D','F'].map(chip).join('')}` +
+          ` · spaces ${['F','A','C','E'].map(chip).join('')} (FACE)` +
+          ` · Bass lines ${['G','B','D','F','A'].map(chip).join('')}` +
+          ` · spaces ${['A','C','E','G'].map(chip).join('')} (ACEG)`;
       }
     }
 
@@ -3916,13 +4183,16 @@
         bpmMetaEl.textContent = rhythmEnabledEl.checked
           ? 'Play melody to auto-detect tempo'
           : 'Enable Taal rhythm, then play';
+        scheduleStaffUpdate();
         return;
       }
       bpmValueEl.textContent = String(Math.round(tempoState.displayBpm));
       const taal = currentTaal();
+      const meter = currentMeter();
       bpmMetaEl.textContent = tempoState.confident
-        ? `${taal.label} · live detect`
-        : `${taal.label} · estimating…`;
+        ? `${taal.label} · ${meter.label} · live detect`
+        : `${taal.label} · ${meter.label} · estimating…`;
+      scheduleStaffUpdate();
     }
 
     function observeOnsetForTempo() {
