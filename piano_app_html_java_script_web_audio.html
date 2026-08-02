@@ -327,6 +327,7 @@
           </optgroup>
           <optgroup label="Keyboard &amp; fretted">
             <option value="piano" selected>Grand Piano</option>
+            <option value="organ">Organ</option>
             <option value="guitar">Guitar</option>
             <option value="mandolin">Mandolin</option>
             <option value="ukulele">Ukulele</option>
@@ -457,10 +458,19 @@
         <label class="accomp-field" for="percSelect">
           <span>Percussion</span>
           <select id="percSelect">
-            <option value="tabla" selected>Tabla</option>
-            <option value="dholak">Dholak</option>
-            <option value="pakhawaj">Pakhawaj</option>
-            <option value="mridangam">Mridangam</option>
+            <optgroup label="Indian">
+              <option value="tabla" selected>Tabla</option>
+              <option value="dholak">Dholak</option>
+              <option value="pakhawaj">Pakhawaj</option>
+              <option value="mridangam">Mridangam</option>
+            </optgroup>
+            <optgroup label="World &amp; kit">
+              <option value="drumset">Drumset</option>
+              <option value="congaBongo">Conga / Bongo</option>
+              <option value="darbuka">Darbuka</option>
+              <option value="djembe">Djembe</option>
+              <option value="cajon">Cajon</option>
+            </optgroup>
           </select>
         </label>
         <label class="accomp-field" for="percLevel">
@@ -536,6 +546,7 @@
     const BASIC_ENV = { attack: 0.004, decay: 0.09, sustain: 0.52, release: 0.18, choke: 0.008, gain: 0.32 };
     const INSTRUMENT_ENV = {
       piano:      { attack: 0.002, decay: 1.1, sustain: 0.12, release: 0.5, choke: 0.02, gain: 0.42 },
+      organ:      { attack: 0.01, decay: 0.06, sustain: 0.96, release: 0.12, choke: 0.02, gain: 0.18 },
       guitar:     { attack: 0.004, decay: 0.55, sustain: 0.22, release: 0.35, choke: 0.015, gain: 0.34 },
       mandolin:   { attack: 0.003, decay: 0.35, sustain: 0.14, release: 0.28, choke: 0.012, gain: 0.3 },
       ukulele:    { attack: 0.004, decay: 0.4, sustain: 0.18, release: 0.3, choke: 0.012, gain: 0.32 },
@@ -587,6 +598,9 @@
     let bellowsLfo = null;
     let bellowsDepth = null;
     let bellowsFilterDepth = null;
+    let leslieLfo = null;
+    let leslieAmpDepth = null;
+    let leslieFilterDepth = null;
     let noiseBuffer = null;
     const keyDrone = { nodes: [], oscillators: [], gains: [], keyId: null };
     const currentVoice = new Map(); // midi -> sounding voice for that key
@@ -696,6 +710,21 @@
       bellowsLfo.connect(bellowsDepth);
       bellowsLfo.connect(bellowsFilterDepth);
       bellowsLfo.start();
+    }
+
+    function ensureLeslie() {
+      getCtx();
+      if (leslieLfo) return;
+      leslieLfo = audioCtx.createOscillator();
+      leslieAmpDepth = audioCtx.createGain();
+      leslieFilterDepth = audioCtx.createGain();
+      leslieLfo.type = 'sine';
+      leslieLfo.frequency.value = 6.2; // rotary speaker rate
+      leslieAmpDepth.gain.value = 0.12;
+      leslieFilterDepth.gain.value = 420;
+      leslieLfo.connect(leslieAmpDepth);
+      leslieLfo.connect(leslieFilterDepth);
+      leslieLfo.start();
     }
 
     function makeStudioImpulse(seconds = 2.1, decay = 2.8) {
@@ -2110,8 +2139,54 @@
       };
     }
 
+    function buildOrganVoice(freq, t) {
+      // Hammond-ish drawbar stack + rotary (Leslie) amp/filter modulation.
+      ensureLeslie();
+      const drawbars = [
+        { mult: 0.5, gain: 0.35 },   // 16'
+        { mult: 1, gain: 0.7 },      // 8'
+        { mult: 1.5, gain: 0.28 },   // 5 1/3'
+        { mult: 2, gain: 0.45 },     // 4'
+        { mult: 3, gain: 0.22 },     // 2 2/3'
+        { mult: 4, gain: 0.18 },     // 2'
+        { mult: 6, gain: 0.1 },      // 1 3/5'
+      ];
+      const filter = audioCtx.createBiquadFilter();
+      const rotary = audioCtx.createGain();
+      const gain = audioCtx.createGain();
+      const oscillators = [];
+      const nodes = [filter, rotary, gain];
+
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(4200, t);
+      filter.Q.setValueAtTime(0.6, t);
+      rotary.gain.setValueAtTime(1, t);
+
+      for (const d of drawbars) {
+        const osc = audioCtx.createOscillator();
+        const mix = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq * d.mult, t);
+        mix.gain.value = d.gain;
+        osc.connect(mix);
+        mix.connect(filter);
+        osc.start(t);
+        oscillators.push(osc);
+        nodes.push(osc, mix);
+      }
+
+      filter.connect(rotary);
+      rotary.connect(gain);
+      gain.connect(masterGain);
+      leslieAmpDepth.connect(rotary.gain);
+      leslieFilterDepth.connect(filter.frequency);
+
+      return { oscillators, nodes, gain };
+    }
+
     function buildInstrumentVoice(instrument, freq, t) {
       if (BASIC_WAVES.has(instrument)) return buildBasicVoice(freq, instrument, t);
+      if (instrument === 'organ') return buildOrganVoice(freq, t);
       if (instrument === 'harmonium') return buildHarmoniumVoice(freq, t, 'basic');
       if (instrument === 'droneHarmonium') return buildHarmoniumVoice(freq, t, 'drone');
       if (instrument === 'advancedHarmonium') return buildHarmoniumVoice(freq, t, 'advanced');
@@ -2966,10 +3041,15 @@
     };
 
     const percProfiles = {
-      tabla:     { bass: 75, treble: 420, bassDecay: 0.28, trebleDecay: 0.12, brightness: 1.0, thump: 0.9 },
-      dholak:    { bass: 95, treble: 280, bassDecay: 0.22, trebleDecay: 0.1, brightness: 0.75, thump: 1.1 },
-      pakhawaj:  { bass: 60, treble: 240, bassDecay: 0.4, trebleDecay: 0.14, brightness: 0.65, thump: 1.25 },
-      mridangam: { bass: 85, treble: 360, bassDecay: 0.32, trebleDecay: 0.16, brightness: 0.95, thump: 1.0 },
+      tabla:      { bass: 75, treble: 420, bassDecay: 0.28, trebleDecay: 0.12, brightness: 1.0, thump: 0.9, snare: 0.08, style: 'indian' },
+      dholak:     { bass: 95, treble: 280, bassDecay: 0.22, trebleDecay: 0.1, brightness: 0.75, thump: 1.1, snare: 0.06, style: 'indian' },
+      pakhawaj:   { bass: 60, treble: 240, bassDecay: 0.4, trebleDecay: 0.14, brightness: 0.65, thump: 1.25, snare: 0.05, style: 'indian' },
+      mridangam:  { bass: 85, treble: 360, bassDecay: 0.32, trebleDecay: 0.16, brightness: 0.95, thump: 1.0, snare: 0.07, style: 'indian' },
+      drumset:    { bass: 50, treble: 200, bassDecay: 0.22, trebleDecay: 0.09, brightness: 1.25, thump: 1.55, snare: 0.62, style: 'kit' },
+      congaBongo: { bass: 120, treble: 380, bassDecay: 0.26, trebleDecay: 0.11, brightness: 0.9, thump: 1.05, snare: 0.1, style: 'hand' },
+      darbuka:    { bass: 145, treble: 700, bassDecay: 0.18, trebleDecay: 0.08, brightness: 1.35, thump: 0.95, snare: 0.22, style: 'goblet' },
+      djembe:     { bass: 95, treble: 430, bassDecay: 0.3, trebleDecay: 0.12, brightness: 1.05, thump: 1.15, snare: 0.16, style: 'hand' },
+      cajon:      { bass: 70, treble: 260, bassDecay: 0.24, trebleDecay: 0.1, brightness: 0.85, thump: 1.3, snare: 0.35, style: 'box' },
     };
 
     const tempoState = {
@@ -3056,45 +3136,57 @@
 
       let freq = p.treble;
       let decay = p.trebleDecay;
-      let noiseAmt = 0.08;
+      let noiseAmt = p.snare * 0.35;
+      let oscType = 'triangle';
+
       if (kind === 'bass') {
+        // Kick / bayan / bass tone
         freq = p.bass;
         decay = p.bassDecay;
-        noiseAmt = 0.05;
-        osc.type = 'sine';
+        noiseAmt = p.style === 'kit' ? 0.04 : 0.05;
+        oscType = 'sine';
         osc.frequency.setValueAtTime(freq * 1.35 * p.thump, t);
-        osc.frequency.exponentialRampToValueAtTime(freq, t + 0.05);
+        osc.frequency.exponentialRampToValueAtTime(Math.max(30, freq), t + (p.style === 'kit' ? 0.08 : 0.05));
       } else if (kind === 'ring') {
-        freq = p.treble * 1.15;
+        // Open hand / tom-ish
+        freq = p.treble * (p.style === 'goblet' ? 1.25 : 1.15);
         decay = p.trebleDecay * 1.35;
-        osc.type = 'triangle';
+        noiseAmt = p.snare * 0.25;
+        oscType = p.style === 'kit' ? 'sine' : 'triangle';
         osc.frequency.setValueAtTime(freq, t);
       } else if (kind === 'slap') {
-        freq = p.treble * 1.6;
-        decay = 0.06;
-        noiseAmt = 0.2;
-        osc.type = 'square';
+        // Rim / slap / cross-stick
+        freq = p.treble * (p.style === 'goblet' ? 2.1 : 1.6);
+        decay = p.style === 'kit' ? 0.08 : 0.06;
+        noiseAmt = Math.max(0.2, p.snare);
+        oscType = 'square';
         osc.frequency.setValueAtTime(freq, t);
       } else {
-        osc.type = 'triangle';
+        // Snare / dayan / open slap tone
+        oscType = p.style === 'kit' ? 'triangle' : 'triangle';
+        noiseAmt = Math.max(noiseAmt, p.style === 'kit' ? p.snare : p.snare * 0.5);
         osc.frequency.setValueAtTime(freq, t);
         osc.frequency.exponentialRampToValueAtTime(freq * 0.92, t + decay);
       }
 
+      osc.type = oscType;
       filter.type = 'lowpass';
-      filter.frequency.setValueAtTime((kind === 'bass' ? 420 : 3200) * p.brightness, t);
-      filter.Q.value = kind === 'slap' ? 2 : 0.8;
+      const cutoff = (kind === 'bass' ? (p.style === 'kit' ? 280 : 420) : 3200) * p.brightness;
+      filter.frequency.setValueAtTime(cutoff, t);
+      filter.Q.value = kind === 'slap' ? 2.2 : (p.style === 'kit' && kind === 'treble' ? 1.4 : 0.8);
 
       const amp = Math.max(0.0001, level);
       gain.gain.setValueAtTime(0.0001, t);
-      gain.gain.exponentialRampToValueAtTime(amp, t + 0.004);
+      gain.gain.exponentialRampToValueAtTime(amp, t + 0.003);
       gain.gain.exponentialRampToValueAtTime(0.0001, t + decay);
 
       noise.buffer = getNoiseBuffer();
       nFilter.type = kind === 'bass' ? 'lowpass' : 'highpass';
-      nFilter.frequency.value = kind === 'bass' ? 180 : 1200;
+      nFilter.frequency.value = kind === 'bass' ? 160 : (p.style === 'kit' ? 1800 : 1200);
+      nFilter.Q.value = p.style === 'kit' && kind !== 'bass' ? 1.2 : 0.7;
+      const noiseDecay = p.style === 'kit' && kind !== 'bass' ? Math.max(0.1, decay) : Math.min(0.08, decay);
       nGain.gain.setValueAtTime(noiseAmt * amp, t);
-      nGain.gain.exponentialRampToValueAtTime(0.0001, t + Math.min(0.08, decay));
+      nGain.gain.exponentialRampToValueAtTime(0.0001, t + noiseDecay);
 
       osc.connect(filter);
       filter.connect(gain);
@@ -3106,7 +3198,7 @@
       osc.start(t);
       osc.stop(t + decay + 0.05);
       noise.start(t);
-      noise.stop(t + 0.09);
+      noise.stop(t + noiseDecay + 0.03);
     }
 
     function playBol(bol, when) {
