@@ -332,6 +332,8 @@
             <option value="ukulele">Ukulele</option>
             <option value="banjo">Banjo</option>
             <option value="harmonium">Harmonium</option>
+            <option value="droneHarmonium">Drone Harmonium</option>
+            <option value="advancedHarmonium">Advanced Harmonium</option>
           </optgroup>
           <optgroup label="Bowed &amp; Indian strings">
             <option value="violin">Violin</option>
@@ -544,8 +546,11 @@
       bawu:        { attack: 0.05, decay: 0.11, sustain: 0.87, release: 0.28, choke: 0.02, gain: 0.22 },
       shahnai:     { attack: 0.05, decay: 0.12, sustain: 0.9, release: 0.28, choke: 0.02, gain: 0.2 },
       nadaswaram:  { attack: 0.06, decay: 0.14, sustain: 0.92, release: 0.32, choke: 0.022, gain: 0.22 },
-      harmonium:   { attack: 0.04, decay: 0.1, sustain: 0.92, release: 0.3, choke: 0.015, gain: 0.2 },
+      harmonium:          { attack: 0.04, decay: 0.1, sustain: 0.92, release: 0.3, choke: 0.015, gain: 0.2 },
+      droneHarmonium:     { attack: 0.05, decay: 0.12, sustain: 0.94, release: 0.35, choke: 0.02, gain: 0.18 },
+      advancedHarmonium:  { attack: 0.035, decay: 0.1, sustain: 0.93, release: 0.32, choke: 0.015, gain: 0.17 },
     };
+    const HARMONIUM_FAMILY = new Set(['harmonium', 'droneHarmonium', 'advancedHarmonium']);
     const BASIC_WAVES = new Set(['sine', 'triangle', 'sawtooth', 'square']);
     const PLUCK_KINDS = new Set(['guitar', 'mandolin', 'ukulele', 'banjo', 'santoor']);
     const DOUBLE_REED_KINDS = new Set(['shahnai', 'nadaswaram']);
@@ -553,6 +558,7 @@
     let audioCtx = null;
     let masterGain = null;
     let harmoniumWave = null;
+    let advancedHarmoniumWave = null;
     let stringWave = null;
     let pianoWave = null;
     let nylonWave = null;
@@ -561,7 +567,9 @@
     let sitarWave = null;
     let bellowsLfo = null;
     let bellowsDepth = null;
+    let bellowsFilterDepth = null;
     let noiseBuffer = null;
+    const keyDrone = { nodes: [], oscillators: [], gains: [], keyId: null };
     const currentVoice = new Map(); // midi -> sounding voice for that key
     const liveVoices = new Set();
     const codePressed = new Set();
@@ -583,6 +591,16 @@
         return (oddBoost / i) * Math.exp(-0.08 * i);
       }, 20);
       return harmoniumWave;
+    }
+
+    function getAdvancedHarmoniumWave() {
+      if (advancedHarmoniumWave) return advancedHarmoniumWave;
+      // Richer multi-reed stop: more upper partials, slight even-harmonic body.
+      advancedHarmoniumWave = makeWave((i) => {
+        const oddBoost = (i % 2 === 1) ? 1.15 : 0.55;
+        return (oddBoost / Math.pow(i, 0.82)) * Math.exp(-0.045 * i);
+      }, 28);
+      return advancedHarmoniumWave;
     }
 
     function getStringWave() {
@@ -631,11 +649,44 @@
       // One shared bellows LFO for all harmonium notes (more realistic than per-voice).
       bellowsLfo = audioCtx.createOscillator();
       bellowsDepth = audioCtx.createGain();
+      bellowsFilterDepth = audioCtx.createGain();
       bellowsLfo.type = 'sine';
       bellowsLfo.frequency.value = 4.8;
-      bellowsDepth.gain.value = 0.05;
+      bellowsDepth.gain.value = 0.045;
+      bellowsFilterDepth.gain.value = 90; // Hz wobble into filter cutoff
       bellowsLfo.connect(bellowsDepth);
+      bellowsLfo.connect(bellowsFilterDepth);
       bellowsLfo.start();
+    }
+
+    function makeStudioImpulse(seconds = 2.1, decay = 2.8) {
+      const rate = audioCtx.sampleRate;
+      const len = Math.floor(rate * seconds);
+      const impulse = audioCtx.createBuffer(2, len, rate);
+      for (let ch = 0; ch < 2; ch++) {
+        const data = impulse.getChannelData(ch);
+        for (let i = 0; i < len; i++) {
+          // Early reflection density + exponential tail.
+          const env = Math.pow(1 - i / len, decay);
+          const early = i < rate * 0.04 ? 0.35 : 1;
+          data[i] = (Math.random() * 2 - 1) * env * early * (ch ? 0.95 : 1);
+        }
+      }
+      return impulse;
+    }
+
+    function makeSoftSaturator() {
+      const shaper = audioCtx.createWaveShaper();
+      const n = 1024;
+      const curve = new Float32Array(n);
+      const drive = 1.8;
+      for (let i = 0; i < n; i++) {
+        const x = (i * 2) / n - 1;
+        curve[i] = Math.tanh(drive * x) / Math.tanh(drive);
+      }
+      shaper.curve = curve;
+      shaper.oversample = '2x';
+      return shaper;
     }
 
     function getTanpuraWave() {
@@ -686,16 +737,62 @@
     const getCtx = () => {
       if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        // Studio-style bus (voices already connect into masterGain):
+        // volume → highpass → soft saturate → compress → air EQ → hall reverb → limiter
         masterGain = audioCtx.createGain();
         masterGain.gain.value = parseFloat(volume.value);
+
+        const hp = audioCtx.createBiquadFilter();
+        hp.type = 'highpass';
+        hp.frequency.value = 35;
+        hp.Q.value = 0.7;
+
+        const saturator = makeSoftSaturator();
         const comp = audioCtx.createDynamicsCompressor();
-        comp.threshold.value = -18;
-        comp.knee.value = 12;
-        comp.ratio.value = 3.5;
-        comp.attack.value = 0.002;
-        comp.release.value = 0.12;
-        masterGain.connect(comp);
-        comp.connect(audioCtx.destination);
+        comp.threshold.value = -16;
+        comp.knee.value = 18;
+        comp.ratio.value = 2.8;
+        comp.attack.value = 0.008;
+        comp.release.value = 0.18;
+
+        const air = audioCtx.createBiquadFilter();
+        air.type = 'highshelf';
+        air.frequency.value = 5200;
+        air.gain.value = 1.8;
+
+        const pre = audioCtx.createGain();
+        pre.gain.value = 0.92;
+        const dry = audioCtx.createGain();
+        dry.gain.value = 0.78;
+        const wet = audioCtx.createGain();
+        wet.gain.value = 0.28;
+        const convolver = audioCtx.createConvolver();
+        convolver.buffer = makeStudioImpulse();
+        const wetFilter = audioCtx.createBiquadFilter();
+        wetFilter.type = 'lowpass';
+        wetFilter.frequency.value = 6500;
+
+        const limiter = audioCtx.createDynamicsCompressor();
+        limiter.threshold.value = -3;
+        limiter.knee.value = 0;
+        limiter.ratio.value = 20;
+        limiter.attack.value = 0.001;
+        limiter.release.value = 0.08;
+
+        masterGain.connect(hp);
+        hp.connect(saturator);
+        saturator.connect(comp);
+        comp.connect(air);
+        air.connect(pre);
+        pre.connect(dry);
+        pre.connect(wet);
+        wet.connect(convolver);
+        convolver.connect(wetFilter);
+        dry.connect(limiter);
+        wetFilter.connect(limiter);
+        limiter.connect(audioCtx.destination);
+
         audioCtx.addEventListener('statechange', syncAudioDot);
       }
       if (audioCtx.state === 'suspended') {
@@ -791,63 +888,164 @@
       };
     }
 
-    function buildHarmoniumVoice(freq, t) {
+    function buildHarmoniumVoice(freq, t, variant = 'basic') {
       ensureBellows();
-      const waveTable = getHarmoniumWave();
+      const advanced = variant === 'advanced';
+      const drone = variant === 'drone';
+      const waveTable = advanced ? getAdvancedHarmoniumWave() : getHarmoniumWave();
       const osc1 = audioCtx.createOscillator();
       const osc2 = audioCtx.createOscillator();
-      const osc3 = audioCtx.createOscillator(); // soft octave-up reed shimmer
+      const osc3 = audioCtx.createOscillator();
+      const osc4 = audioCtx.createOscillator(); // male/female extra stop for advanced
       const band = audioCtx.createBiquadFilter();
       const low = audioCtx.createBiquadFilter();
       const tremolo = audioCtx.createGain();
       const gain = audioCtx.createGain();
+      const mix1 = audioCtx.createGain();
+      const mix2 = audioCtx.createGain();
+      const mix3 = audioCtx.createGain();
+      const mix4 = audioCtx.createGain();
 
       osc1.setPeriodicWave(waveTable);
       osc2.setPeriodicWave(waveTable);
       osc3.type = 'sine';
+      osc4.setPeriodicWave(getHarmoniumWave());
       osc1.frequency.setValueAtTime(freq, t);
-      osc2.frequency.setValueAtTime(freq * 1.006, t); // dual-reed detune
+      osc2.frequency.setValueAtTime(freq * (advanced ? 1.0075 : 1.006), t);
       osc3.frequency.setValueAtTime(freq * 2, t);
+      osc4.frequency.setValueAtTime(freq * 0.5, t); // sub octave coupler
 
-      const mix1 = audioCtx.createGain();
-      const mix2 = audioCtx.createGain();
-      const mix3 = audioCtx.createGain();
-      mix1.gain.setValueAtTime(0.72, t);
-      mix2.gain.setValueAtTime(0.55, t);
-      mix3.gain.setValueAtTime(0.12, t);
+      mix1.gain.setValueAtTime(advanced ? 0.62 : 0.72, t);
+      mix2.gain.setValueAtTime(advanced ? 0.58 : 0.55, t);
+      mix3.gain.setValueAtTime(advanced ? 0.18 : 0.12, t);
+      mix4.gain.setValueAtTime(advanced ? 0.22 : (drone ? 0.16 : 0.0), t);
 
-      // Nasal reed body: band-pass focus + soft low-pass air.
       band.type = 'bandpass';
-      band.frequency.setValueAtTime(Math.min(2800, freq * 3.2), t);
-      band.Q.setValueAtTime(1.1, t);
+      band.frequency.setValueAtTime(Math.min(advanced ? 3200 : 2800, freq * 3.2), t);
+      band.Q.setValueAtTime(advanced ? 1.25 : 1.1, t);
       low.type = 'lowpass';
-      low.frequency.setValueAtTime(4200, t);
+      low.frequency.setValueAtTime(advanced ? 5200 : 4200, t);
       low.Q.setValueAtTime(0.5, t);
 
-      // Shared bellows modulates all harmonium notes together.
       tremolo.gain.setValueAtTime(1, t);
 
       osc1.connect(mix1);
       osc2.connect(mix2);
       osc3.connect(mix3);
+      osc4.connect(mix4);
       mix1.connect(band);
       mix2.connect(band);
       mix3.connect(low);
+      mix4.connect(low);
       band.connect(low);
       low.connect(tremolo);
       tremolo.connect(gain);
       gain.connect(masterGain);
       bellowsDepth.connect(tremolo.gain);
+      if (bellowsFilterDepth) bellowsFilterDepth.connect(low.frequency);
 
       osc1.start(t);
       osc2.start(t);
       osc3.start(t);
+      if (advanced || drone) osc4.start(t);
 
+      const oscillators = (advanced || drone) ? [osc1, osc2, osc3, osc4] : [osc1, osc2, osc3];
       return {
-        oscillators: [osc1, osc2, osc3],
-        nodes: [osc1, osc2, osc3, mix1, mix2, mix3, band, low, tremolo, gain],
+        oscillators,
+        nodes: [osc1, osc2, osc3, osc4, mix1, mix2, mix3, mix4, band, low, tremolo, gain],
         gain,
       };
+    }
+
+    function stopKeyDrone(releaseSec = 0.4) {
+      if (!audioCtx || !keyDrone.oscillators.length) {
+        keyDrone.oscillators = [];
+        keyDrone.nodes = [];
+        keyDrone.keyId = null;
+        return;
+      }
+      const now = audioCtx.currentTime;
+      for (const g of keyDrone.gains || []) {
+        try {
+          g.gain.cancelScheduledValues(now);
+          g.gain.setValueAtTime(Math.max(0.0001, g.gain.value), now);
+          g.gain.exponentialRampToValueAtTime(0.0001, now + releaseSec);
+        } catch (_) {}
+      }
+      for (const osc of keyDrone.oscillators) {
+        try { osc.stop(now + releaseSec + 0.03); } catch (_) {}
+      }
+      const nodes = keyDrone.nodes.slice();
+      setTimeout(() => {
+        for (const n of nodes) {
+          try { n.disconnect(); } catch (_) {}
+        }
+      }, (releaseSec + 0.05) * 1000);
+      keyDrone.oscillators = [];
+      keyDrone.nodes = [];
+      keyDrone.gains = [];
+      keyDrone.keyId = null;
+    }
+
+    function ensureKeyDrone() {
+      if (wave.value !== 'droneHarmonium') {
+        stopKeyDrone(0.25);
+        return;
+      }
+      getCtx();
+      ensureBellows();
+      const key = detectedKey || { tonic: startC % 12, mode: 'major' };
+      const id = String(key.tonic);
+      if (keyDrone.keyId === id && keyDrone.oscillators.length) return;
+      stopKeyDrone(0.2);
+
+      const now = audioCtx.currentTime;
+      let sa = 48 + key.tonic; // around C3+
+      while (sa > 55) sa -= 12;
+      while (sa < 45) sa += 12;
+      const drones = [sa - 12, sa, sa + 7, sa + 12]; // low Sa, Sa, Pa, high Sa
+      const levels = [0.07, 0.1, 0.08, 0.05];
+      const waveTable = getAdvancedHarmoniumWave();
+      const oscillators = [];
+      const nodes = [];
+      const gains = [];
+
+      drones.forEach((midi, idx) => {
+        const freq = midiToFreq(midi);
+        const osc1 = audioCtx.createOscillator();
+        const osc2 = audioCtx.createOscillator();
+        const filter = audioCtx.createBiquadFilter();
+        const trem = audioCtx.createGain();
+        const g = audioCtx.createGain();
+        const mix = audioCtx.createGain();
+        osc1.setPeriodicWave(waveTable);
+        osc2.setPeriodicWave(waveTable);
+        osc1.frequency.value = freq;
+        osc2.frequency.value = freq * 1.003;
+        mix.gain.value = 0.7;
+        filter.type = 'lowpass';
+        filter.frequency.value = 2800;
+        trem.gain.value = 1;
+        g.gain.setValueAtTime(0.0001, now);
+        g.gain.exponentialRampToValueAtTime(levels[idx], now + 0.35);
+        osc1.connect(mix);
+        osc2.connect(mix);
+        mix.connect(filter);
+        filter.connect(trem);
+        trem.connect(g);
+        g.connect(masterGain);
+        bellowsDepth.connect(trem.gain);
+        osc1.start(now);
+        osc2.start(now);
+        oscillators.push(osc1, osc2);
+        nodes.push(osc1, osc2, mix, filter, trem, g);
+        gains.push(g);
+      });
+
+      keyDrone.oscillators = oscillators;
+      keyDrone.nodes = nodes;
+      keyDrone.gains = gains;
+      keyDrone.keyId = id;
     }
 
     function buildFluteVoice(freq, t) {
@@ -1714,7 +1912,9 @@
 
     function buildInstrumentVoice(instrument, freq, t) {
       if (BASIC_WAVES.has(instrument)) return buildBasicVoice(freq, instrument, t);
-      if (instrument === 'harmonium') return buildHarmoniumVoice(freq, t);
+      if (instrument === 'harmonium') return buildHarmoniumVoice(freq, t, 'basic');
+      if (instrument === 'droneHarmonium') return buildHarmoniumVoice(freq, t, 'drone');
+      if (instrument === 'advancedHarmonium') return buildHarmoniumVoice(freq, t, 'advanced');
       if (instrument === 'flute') return buildFluteVoice(freq, t);
       if (instrument === 'bansuri') return buildBansuriVoice(freq, t);
       if (instrument === 'nativeFlute') return buildNativeFluteVoice(freq, t);
@@ -1745,6 +1945,7 @@
       const freq = midiToFreq(midi);
       const instrument = wave.value;
       const env = INSTRUMENT_ENV[instrument] || BASIC_ENV;
+      if (instrument === 'droneHarmonium') ensureKeyDrone();
       const built = buildInstrumentVoice(instrument, freq, t);
 
       const peak = Math.max(0.0001, velocity) * env.gain;
@@ -1821,6 +2022,7 @@
       currentVoice.clear();
       liveVoices.clear();
       stopChordPad(0.05);
+      stopKeyDrone(0.08);
       document.querySelectorAll('#piano .active').forEach((el) => el.classList.remove('active'));
     }
 
@@ -2107,7 +2309,7 @@
       if (style === 'tanpura') return (isBass ? 0.09 : 0.11) * accomp;
       if (style === 'sitar') return (isBass ? 0.05 : 0.09) * accomp;
       // soft pad / reed blend
-      const reed = wave.value === 'harmonium';
+      const reed = HARMONIUM_FAMILY.has(wave.value);
       return (isBass ? 0.05 : 0.078) * accomp * (reed ? 0.85 : 1);
     }
 
@@ -2228,7 +2430,7 @@
         noise.start(t0);
         oscillators.push(osc, osc2, noise);
         nodes.push(osc, osc2, mix, mix2, noise, noiseGain, noiseFilter);
-      } else if (style === 'pad' && wave.value === 'harmonium') {
+      } else if (style === 'pad' && HARMONIUM_FAMILY.has(wave.value)) {
         ensureBellows();
         const waveTable = getHarmoniumWave();
         const osc1 = audioCtx.createOscillator();
@@ -2296,7 +2498,7 @@
     function startChordPad(chord, force = false) {
       getCtx();
       const style = accompStyle();
-      const styleKey = `${style}:${wave.value === 'harmonium' ? 'h' : 'x'}`;
+      const styleKey = `${style}:${HARMONIUM_FAMILY.has(wave.value) ? 'h' : 'x'}`;
       // Tanpura follows key; other styles follow chord label.
       const identity = style === 'tanpura'
         ? `tanpura:${detectedKey.tonic}:${detectedKey.mode}`
@@ -2337,6 +2539,7 @@
       if (melodyHistory.length > 64) melodyHistory.splice(0, melodyHistory.length - 64);
 
       detectedKey = detectKey(melodyHistory);
+      if (wave.value === 'droneHarmonium') ensureKeyDrone();
       const melodyPc = ((midi % 12) + 12) % 12;
       lastMelodyPc = melodyPc;
       let next = chooseChord(detectedKey, melodyPc, currentChord);
@@ -2405,6 +2608,7 @@
       detectedKey = detectKey(melodyHistory);
       updateChordReadout(detectedKey, currentChord);
       updateScaleReadout(detectedKey, lastMelodyPc);
+      if (wave.value === 'droneHarmonium') ensureKeyDrone();
       if (currentChord && autoChordsEl.checked) {
         // Re-pick under locked/unlocked key using last melody pc if available.
         const last = melodyHistory[melodyHistory.length - 1];
@@ -2436,7 +2640,15 @@
       if (currentChord && autoChordsEl.checked) startChordPad(currentChord, true);
     }
 
-    wave.addEventListener('change', refreshAccompPad);
+    wave.addEventListener('change', () => {
+      refreshAccompPad();
+      if (wave.value === 'droneHarmonium') {
+        getCtx();
+        ensureKeyDrone();
+      } else {
+        stopKeyDrone(0.3);
+      }
+    });
     accompSoundEl.addEventListener('change', refreshAccompPad);
 
     // ---- Keyboard UI ----
@@ -2802,6 +3014,12 @@
       highlightKey(midi, true);
       voiceOn(midi, 1);
       addToRecording('on', midi);
+      // Live scale highlight updates immediately (chords still wait for grace filter).
+      lastMelodyPc = ((midi % 12) + 12) % 12;
+      if (melodyHistory.length || keyFromLock()) {
+        detectedKey = detectKey(melodyHistory.length ? melodyHistory : [{ pc: lastMelodyPc, t: performance.now(), dur: 180 }]);
+      }
+      updateScaleReadout(detectedKey, lastMelodyPc);
       observeOnsetForTempo();
       if (rhythmEnabledEl.checked && !rhythmState.running) startRhythm();
       queueMelodyHarmony(midi);
