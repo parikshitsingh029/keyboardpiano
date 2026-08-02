@@ -60,8 +60,10 @@
       flex-direction: column;
       gap: 8px;
     }
+    .control-instrument { grid-column: span 2; }
     .control label { font-size: 12px; color: var(--muted); }
     .control input[type="range"] { width: 100%; }
+    .control .hint { font-size: 11px; color: var(--muted); line-height: 1.35; }
     .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     select, button, input[type="checkbox"], input[type="range"] { accent-color: var(--accent); }
     select, button {
@@ -73,6 +75,7 @@
       font: inherit;
       cursor: pointer;
     }
+    #wave { width: 100%; min-height: 40px; }
     button:disabled { opacity: .55; cursor: not-allowed; }
     .btn-outline { background: transparent; }
 
@@ -215,6 +218,7 @@
 
     @media (max-width: 820px) {
       .controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .control-instrument { grid-column: span 2; }
       .chord-readout { margin-left: 0; text-align: left; width: 100%; }
     }
   </style>
@@ -227,15 +231,22 @@
     </header>
 
     <section class="controls">
-      <div class="control">
+      <div class="control control-instrument">
         <label for="wave">Instrument</label>
         <select id="wave">
+          <optgroup label="Flutes">
+            <option value="flute">Western Flute</option>
+            <option value="bansuri">Bansuri</option>
+            <option value="nativeFlute">Native American Flute</option>
+            <option value="dizi">Chinese Dizi Flute</option>
+          </optgroup>
           <optgroup label="Keyboard &amp; fretted">
             <option value="piano" selected>Grand Piano</option>
             <option value="guitar">Guitar</option>
             <option value="mandolin">Mandolin</option>
             <option value="ukulele">Ukulele</option>
             <option value="banjo">Banjo</option>
+            <option value="harmonium">Harmonium</option>
           </optgroup>
           <optgroup label="Bowed &amp; Indian strings">
             <option value="violin">Violin</option>
@@ -245,14 +256,9 @@
             <option value="santoor">Santoor</option>
             <option value="dilruba">Dilruba</option>
           </optgroup>
-          <optgroup label="Winds &amp; reeds">
-            <option value="flute">Flute</option>
-            <option value="bansuri">Bansuri</option>
-            <option value="nativeFlute">Native American Flute</option>
-            <option value="dizi">Chinese Dizi</option>
+          <optgroup label="Reeds">
             <option value="shahnai">Shehnai</option>
             <option value="nadaswaram">Nadaswaram</option>
-            <option value="harmonium">Harmonium</option>
           </optgroup>
           <optgroup label="Basic waves">
             <option value="sine">Sine</option>
@@ -261,6 +267,7 @@
             <option value="square">Square</option>
           </optgroup>
         </select>
+        <div class="hint">Scroll the list — flutes are at the top (Native American Flute, Chinese Dizi Flute).</div>
       </div>
       <div class="control">
         <label for="volume">Volume</label>
