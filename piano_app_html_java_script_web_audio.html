@@ -1971,25 +1971,52 @@
       // No pointerleave — it was cutting notes during fast taps/jitters.
     }
 
+    function blurFormControls() {
+      // <select> typeahead matches letters to options (C→Cello, B→Banjo, …)
+      // and steals piano keys when a dropdown still has focus.
+      const ae = document.activeElement;
+      if (!ae || ae === document.body) return;
+      const tag = ae.tagName;
+      if (tag === 'SELECT' || tag === 'INPUT' || tag === 'BUTTON' || tag === 'TEXTAREA') {
+        ae.blur();
+      }
+    }
+
+    // Capture phase so piano keys win before dropdowns consume them.
     window.addEventListener('keydown', (e) => {
-      if (e.repeat) return;
       if (!KEY_CODES.includes(e.code)) return;
-      if (codePressed.has(e.code)) return;
       e.preventDefault();
+      e.stopPropagation();
+      blurFormControls();
+      if (e.repeat) return;
+      if (codePressed.has(e.code)) return;
       getCtx();
       codePressed.add(e.code);
       const midi = midiForCode(e.code);
       if (midi == null) return;
       pressMidi(midi);
-    });
+    }, true);
 
     window.addEventListener('keyup', (e) => {
+      if (!KEY_CODES.includes(e.code)) return;
+      e.preventDefault();
+      e.stopPropagation();
       if (!codePressed.has(e.code)) return;
       codePressed.delete(e.code);
       const midi = midiForCode(e.code);
       if (midi == null) return;
       releaseMidi(midi);
-    });
+    }, true);
+
+    // Extra guard: ignore letter/digit typeahead on our dropdowns for piano keys.
+    for (const el of [wave, octaveSel, keyLockEl, accompSoundEl]) {
+      el.addEventListener('keydown', (e) => {
+        if (KEY_CODES.includes(e.code)) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      });
+    }
 
     window.addEventListener('blur', () => {
       for (const code of [...codePressed]) {
