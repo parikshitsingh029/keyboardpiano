@@ -216,10 +216,57 @@
     }
     .chord-readout .chord-meta { font-size: 12px; color: var(--muted); }
 
+    .rhythm {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 10px 22px 14px;
+      border-bottom: 1px solid #202a48;
+      flex-wrap: wrap;
+    }
+    .rhythm-left {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .bpm-readout {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      margin-left: auto;
+      text-align: right;
+      min-width: 160px;
+    }
+    .bpm-readout .bpm-value {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      color: var(--accent);
+      font-variant-numeric: tabular-nums;
+      min-width: 3ch;
+    }
+    .bpm-readout .bpm-unit { font-size: 12px; color: var(--muted); }
+    .bpm-readout .bpm-meta { font-size: 12px; color: var(--muted); }
+    .bol-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border: 1px solid #2a3557;
+      background: #111733;
+      border-radius: 999px;
+      font-size: 12px;
+      color: var(--text);
+      text-transform: capitalize;
+    }
+
     @media (max-width: 820px) {
       .controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .control-instrument { grid-column: span 2; }
       .chord-readout { margin-left: 0; text-align: left; width: 100%; }
+      .bpm-readout { margin-left: 0; text-align: left; width: 100%; }
     }
   </style>
 </head>
@@ -335,6 +382,47 @@
       </div>
     </section>
 
+    <section class="rhythm">
+      <div class="rhythm-left">
+        <label class="accomp-toggle">
+          <input id="rhythmEnabled" type="checkbox" />
+          <span>Taal rhythm</span>
+        </label>
+        <label class="accomp-field" for="taalSelect">
+          <span>Taal</span>
+          <select id="taalSelect">
+            <option value="keherwa" selected>Keherwa (8)</option>
+            <option value="bhajani">Bhajani (8)</option>
+            <option value="dadra">Dadra (6)</option>
+            <option value="rupak">Rupak (7)</option>
+            <option value="jhaptaal">Jhaptaal (10)</option>
+            <option value="ektaal">Ektaal (12)</option>
+            <option value="deepchandi">Deepchandi (14)</option>
+            <option value="teentaal">Teentaal (16)</option>
+          </select>
+        </label>
+        <label class="accomp-field" for="percSelect">
+          <span>Percussion</span>
+          <select id="percSelect">
+            <option value="tabla" selected>Tabla</option>
+            <option value="dholak">Dholak</option>
+            <option value="pakhawaj">Pakhawaj</option>
+            <option value="mridangam">Mridangam</option>
+          </select>
+        </label>
+        <label class="accomp-field" for="percLevel">
+          <span>Level</span>
+          <input id="percLevel" type="range" min="0" max="1" step="0.01" value="0.65" />
+        </label>
+        <span class="bol-chip">Bol: <strong id="bolReadout">—</strong></span>
+      </div>
+      <div class="bpm-readout">
+        <span class="bpm-value" id="bpmValue">—</span>
+        <span class="bpm-unit">BPM</span>
+        <span class="bpm-meta" id="bpmMeta">Play melody to auto-detect tempo</span>
+      </div>
+    </section>
+
     <section class="piano-wrap">
       <div id="piano" class="piano">
         <div class="white-keys" id="whiteKeys" style="--white-count:14"></div>
@@ -377,6 +465,13 @@
     const accompLevelEl = document.getElementById('accompLevel');
     const chordNameEl = document.getElementById('chordName');
     const chordMetaEl = document.getElementById('chordMeta');
+    const rhythmEnabledEl = document.getElementById('rhythmEnabled');
+    const taalSelectEl = document.getElementById('taalSelect');
+    const percSelectEl = document.getElementById('percSelect');
+    const percLevelEl = document.getElementById('percLevel');
+    const bolReadoutEl = document.getElementById('bolReadout');
+    const bpmValueEl = document.getElementById('bpmValue');
+    const bpmMetaEl = document.getElementById('bpmMeta');
 
     // ---- Audio engine ----
     // Fast playing fix: releasing voices are NOT kept in currentVoice, and note-on
@@ -2306,10 +2401,303 @@
       }
     }
 
+    // ---- Taal rhythm + BPM detection ----
+    const TAALS = {
+      keherwa: {
+        label: 'Keherwa',
+        beats: 8,
+        pattern: ['dha', 'ge', 'na', 'ti', 'na', 'ka', 'dhi', 'na'],
+      },
+      bhajani: {
+        label: 'Bhajani',
+        beats: 8,
+        pattern: ['dha', 'ge', 'dhin', 'na', 'ti', 'na', 'dhi', 'na'],
+      },
+      dadra: {
+        label: 'Dadra',
+        beats: 6,
+        pattern: ['dha', 'dhin', 'na', 'dha', 'tin', 'na'],
+      },
+      rupak: {
+        label: 'Rupak',
+        beats: 7,
+        pattern: ['tin', 'tin', 'na', 'dhin', 'na', 'dhin', 'na'],
+      },
+      jhaptaal: {
+        label: 'Jhaptaal',
+        beats: 10,
+        pattern: ['dhin', 'na', 'dhin', 'dhin', 'na', 'tin', 'na', 'dhin', 'dhin', 'na'],
+      },
+      ektaal: {
+        label: 'Ektaal',
+        beats: 12,
+        pattern: ['dhin', 'dhin', 'dha', 'ge', 'tir', 'kit', 'tu', 'na', 'kat', 'ta', 'dha', 'ge'],
+      },
+      deepchandi: {
+        label: 'Deepchandi',
+        beats: 14,
+        pattern: ['dha', 'dhin', '-', 'dha', 'dha', 'tin', '-', 'ta', 'tin', '-', 'dha', 'dha', 'dhin', '-'],
+      },
+      teentaal: {
+        label: 'Teentaal',
+        beats: 16,
+        pattern: ['dha', 'dhin', 'dhin', 'dha', 'dha', 'dhin', 'dhin', 'dha', 'dha', 'tin', 'tin', 'ta', 'ta', 'dhin', 'dhin', 'dha'],
+      },
+    };
+
+    const percProfiles = {
+      tabla:     { bass: 75, treble: 420, bassDecay: 0.28, trebleDecay: 0.12, brightness: 1.0, thump: 0.9 },
+      dholak:    { bass: 95, treble: 280, bassDecay: 0.22, trebleDecay: 0.1, brightness: 0.75, thump: 1.1 },
+      pakhawaj:  { bass: 60, treble: 240, bassDecay: 0.4, trebleDecay: 0.14, brightness: 0.65, thump: 1.25 },
+      mridangam: { bass: 85, treble: 360, bassDecay: 0.32, trebleDecay: 0.16, brightness: 0.95, thump: 1.0 },
+    };
+
+    const tempoState = {
+      onsets: [],
+      bpm: 90,
+      displayBpm: null,
+      confident: false,
+    };
+
+    const rhythmState = {
+      running: false,
+      timer: 0,
+      nextTime: 0,
+      beatIndex: 0,
+      token: 0,
+    };
+
+    function currentTaal() {
+      return TAALS[taalSelectEl.value] || TAALS.keherwa;
+    }
+
+    function updateBpmUi() {
+      if (tempoState.displayBpm == null) {
+        bpmValueEl.textContent = '—';
+        bpmMetaEl.textContent = rhythmEnabledEl.checked
+          ? 'Play melody to auto-detect tempo'
+          : 'Enable Taal rhythm, then play';
+        return;
+      }
+      bpmValueEl.textContent = String(Math.round(tempoState.displayBpm));
+      const taal = currentTaal();
+      bpmMetaEl.textContent = tempoState.confident
+        ? `${taal.label} · live detect`
+        : `${taal.label} · estimating…`;
+    }
+
+    function observeOnsetForTempo() {
+      const now = performance.now();
+      const onsets = tempoState.onsets;
+      if (onsets.length && now - onsets[onsets.length - 1] < 70) return; // debounce chords/flam
+      onsets.push(now);
+      while (onsets.length && now - onsets[0] > 10000) onsets.shift();
+      if (onsets.length > 48) onsets.splice(0, onsets.length - 48);
+
+      const iois = [];
+      for (let i = 1; i < onsets.length; i++) {
+        const d = onsets[i] - onsets[i - 1];
+        if (d >= 110 && d <= 1400) iois.push(d);
+      }
+      if (iois.length < 3) {
+        updateBpmUi();
+        return;
+      }
+
+      const sorted = [...iois].sort((a, b) => a - b);
+      let median = sorted[Math.floor(sorted.length / 2)];
+      // Prefer beat-level tempo: if median looks like 8ths, double the period.
+      let beatMs = median;
+      let bpm = 60000 / beatMs;
+      if (bpm > 168) { beatMs *= 2; bpm = 60000 / beatMs; }
+      if (bpm < 48) { beatMs /= 2; bpm = 60000 / beatMs; }
+      bpm = Math.max(48, Math.min(200, bpm));
+
+      // Smooth toward new estimate.
+      const prev = tempoState.bpm || bpm;
+      const alpha = tempoState.confident ? 0.22 : 0.4;
+      tempoState.bpm = prev * (1 - alpha) + bpm * alpha;
+      tempoState.displayBpm = tempoState.bpm;
+      tempoState.confident = iois.length >= 5;
+      updateBpmUi();
+    }
+
+    function playPercHead(kind, when, level) {
+      // kind: 'bass' | 'treble' | 'slap' | 'ring'
+      getCtx();
+      const p = percProfiles[percSelectEl.value] || percProfiles.tabla;
+      const t = when;
+      const osc = audioCtx.createOscillator();
+      const filter = audioCtx.createBiquadFilter();
+      const gain = audioCtx.createGain();
+      const noise = audioCtx.createBufferSource();
+      const nGain = audioCtx.createGain();
+      const nFilter = audioCtx.createBiquadFilter();
+
+      let freq = p.treble;
+      let decay = p.trebleDecay;
+      let noiseAmt = 0.08;
+      if (kind === 'bass') {
+        freq = p.bass;
+        decay = p.bassDecay;
+        noiseAmt = 0.05;
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq * 1.35 * p.thump, t);
+        osc.frequency.exponentialRampToValueAtTime(freq, t + 0.05);
+      } else if (kind === 'ring') {
+        freq = p.treble * 1.15;
+        decay = p.trebleDecay * 1.35;
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, t);
+      } else if (kind === 'slap') {
+        freq = p.treble * 1.6;
+        decay = 0.06;
+        noiseAmt = 0.2;
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(freq, t);
+      } else {
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, t);
+        osc.frequency.exponentialRampToValueAtTime(freq * 0.92, t + decay);
+      }
+
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime((kind === 'bass' ? 420 : 3200) * p.brightness, t);
+      filter.Q.value = kind === 'slap' ? 2 : 0.8;
+
+      const amp = Math.max(0.0001, level);
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(amp, t + 0.004);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + decay);
+
+      noise.buffer = getNoiseBuffer();
+      nFilter.type = kind === 'bass' ? 'lowpass' : 'highpass';
+      nFilter.frequency.value = kind === 'bass' ? 180 : 1200;
+      nGain.gain.setValueAtTime(noiseAmt * amp, t);
+      nGain.gain.exponentialRampToValueAtTime(0.0001, t + Math.min(0.08, decay));
+
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(masterGain);
+      noise.connect(nFilter);
+      nFilter.connect(nGain);
+      nGain.connect(masterGain);
+
+      osc.start(t);
+      osc.stop(t + decay + 0.05);
+      noise.start(t);
+      noise.stop(t + 0.09);
+    }
+
+    function playBol(bol, when) {
+      const lvl = parseFloat(percLevelEl.value);
+      const b = (bol || '-').toLowerCase();
+      if (b === '-' || b === '') return;
+      // Map common tabla bols onto bass/treble/slap/ring layers.
+      if (b === 'dha') {
+        playPercHead('bass', when, lvl * 0.85);
+        playPercHead('treble', when, lvl * 0.55);
+      } else if (b === 'dhin' || b === 'dhi') {
+        playPercHead('bass', when, lvl * 0.45);
+        playPercHead('ring', when, lvl * 0.75);
+      } else if (b === 'ge' || b === 'ga' || b === 'ghe') {
+        playPercHead('bass', when, lvl * 0.9);
+      } else if (b === 'na' || b === 'ta' || b === 'tu') {
+        playPercHead('treble', when, lvl * 0.7);
+      } else if (b === 'ti' || b === 'tin' || b === 'ra') {
+        playPercHead('ring', when, lvl * 0.65);
+      } else if (b === 'ka' || b === 'kat' || b === 'ki' || b === 'kit' || b === 'tir') {
+        playPercHead('slap', when, lvl * 0.7);
+      } else {
+        playPercHead('treble', when, lvl * 0.55);
+      }
+    }
+
+    function stopRhythm() {
+      rhythmState.token++;
+      if (rhythmState.timer) {
+        clearTimeout(rhythmState.timer);
+        rhythmState.timer = 0;
+      }
+      rhythmState.running = false;
+      bolReadoutEl.textContent = '—';
+    }
+
+    function scheduleRhythm() {
+      if (!rhythmEnabledEl.checked) return;
+      getCtx();
+      const token = rhythmState.token;
+      const taal = currentTaal();
+      const pattern = taal.pattern;
+      const horizon = 0.12;
+
+      if (!rhythmState.running) {
+        rhythmState.running = true;
+        rhythmState.beatIndex = 0;
+        rhythmState.nextTime = audioCtx.currentTime + 0.05;
+      }
+
+      const tick = () => {
+        if (token !== rhythmState.token || !rhythmEnabledEl.checked) return;
+        const bpm = tempoState.bpm || 90;
+        const beatDur = 60 / bpm;
+        const now = audioCtx.currentTime;
+
+        while (rhythmState.nextTime < now + horizon) {
+          const idx = rhythmState.beatIndex % pattern.length;
+          const bol = pattern[idx];
+          playBol(bol, rhythmState.nextTime);
+          const showAt = Math.max(0, (rhythmState.nextTime - audioCtx.currentTime) * 1000);
+          setTimeout(() => {
+            if (token !== rhythmState.token) return;
+            bolReadoutEl.textContent = bol === '-' ? 'rest' : bol;
+          }, showAt);
+
+          rhythmState.beatIndex++;
+          rhythmState.nextTime += beatDur;
+        }
+        rhythmState.timer = setTimeout(tick, 25);
+      };
+
+      tick();
+    }
+
+    function startRhythm() {
+      stopRhythm();
+      if (!rhythmEnabledEl.checked) return;
+      if (tempoState.displayBpm == null) {
+        tempoState.bpm = 90;
+        tempoState.displayBpm = 90;
+      }
+      updateBpmUi();
+      scheduleRhythm();
+    }
+
+    rhythmEnabledEl.addEventListener('change', () => {
+      if (rhythmEnabledEl.checked) {
+        getCtx();
+        startRhythm();
+      } else {
+        stopRhythm();
+        updateBpmUi();
+      }
+    });
+    taalSelectEl.addEventListener('change', () => {
+      if (rhythmEnabledEl.checked) startRhythm();
+      else updateBpmUi();
+    });
+    percSelectEl.addEventListener('change', () => {
+      if (rhythmEnabledEl.checked) startRhythm();
+    });
+
+    updateBpmUi();
+
     function pressMidi(midi) {
       highlightKey(midi, true);
       voiceOn(midi, 1);
       addToRecording('on', midi);
+      observeOnsetForTempo();
+      if (rhythmEnabledEl.checked && !rhythmState.running) startRhythm();
       queueMelodyHarmony(midi);
     }
 
@@ -2387,7 +2775,7 @@
     }, true);
 
     // Extra guard: ignore letter/digit typeahead on our dropdowns for piano keys.
-    for (const el of [wave, octaveSel, keyLockEl, accompSoundEl]) {
+    for (const el of [wave, octaveSel, keyLockEl, accompSoundEl, taalSelectEl, percSelectEl]) {
       el.addEventListener('keydown', (e) => {
         if (KEY_CODES.includes(e.code)) {
           e.preventDefault();
